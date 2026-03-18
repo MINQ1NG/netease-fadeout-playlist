@@ -1,5 +1,6 @@
 class ContentScript {
   constructor() {
+    console.log('[ContentScript] 构造函数开始执行');
     this.logger = new Logger('Content');
     this.currentSong = {
       id: null,
@@ -23,15 +24,18 @@ class ContentScript {
   }
 
   init() {
-    this.logger.info('内容脚本启动');
+    this.logger.info('[init]内容脚本启动');
     
     // 监听DOM变化
+    console.log('[init] 监听DOM变化');
     this.observePlayer();
     
     // 监听点击事件
+    console.log('[init] 监听点击事件');
     this.trackUserClicks();
     
     // 跟踪播放进度
+    console.log('[init] 跟踪播放进度');
     this.trackPlayProgress();
     
     // 监听来自background的消息
@@ -87,36 +91,63 @@ class ContentScript {
   }
 
   trackUserClicks() {
-    // 监听下一曲按钮点击
+
+    // 使用捕获阶段确保监听器最先执行
     document.addEventListener('click', (e) => {
-      const nextButton = e.target.closest('.nxt, .next-btn, [data-action="next"], .icon-next, .prv, .ply');
-      if (nextButton) {
-        // 判断是下一曲还是上一曲
-        const isNext = nextButton.classList.contains('nxt') || 
-                       nextButton.classList.contains('next-btn') ||
-                       nextButton.getAttribute('data-action') === 'next';
-        
-        if (isNext) {
-          this.currentSong.isManualSkip = true;
-          this.currentSong.lastClickTime = Date.now();
-          this.logger.debug('检测到手动点击下一曲');
-        }
+      // 记录点击元素信息，方便调试
+      const target = e.target;
+      this.logger.info('捕获到点击事件', {
+        tag: target.tagName,
+        id: target.id,
+        classes: target.className,
+        text: target.innerText?.substring(0, 30),
+        path: e.composedPath?.().map(el => el.tagName).join(' > ') // 事件路径
+      });
+  
+      // 检测下一曲按钮（覆盖更多选择器）
+      const nextButtonSelectors = [
+        // '下一曲', '下一首', 'next', 'skip', '跳过',
+        // 'icon-next', 'btn-next', 'skip-btn', 'forward',
+        // 'control-next', 'skip-forward', 'step-forward',
+        // '播放下一首', '播放下一曲', '下一首歌',
+        // 'next-song', 'next-track', 'skip-track',
+        // 'forward-step', 'fast-forward', 'go-forward',
+        // '跳过歌曲', '跳过当前', '切换歌曲', '下一首歌曲',
+        '.nxt', '.next-btn', '[data-action="next"]', '.icon-next',
+        '.playbar__next', 'button[title="下一曲"]', 'button[aria-label="下一曲"]'
+        // 根据实际日志添加更多选择器
+      ];
+  
+      const isNext = nextButtonSelectors.some(selector => 
+        target.matches(selector) || target.closest(selector)
+      );
+  
+      if (isNext) {
+        this.logger.info('检测到下一曲点击');
+        e.preventDefault(); // 可选，但建议保留
+        this.currentSong.isManualSkip = true;
+        this.currentSong.lastClickTime = Date.now();
+        // this.handleNextButtonClick(e);
+        return;
       }
 
-      // 监听进度条点击（手动跳转）
-      const progressBar = e.target.closest('.j-flag, .play-bar, .m-pbar');
-      if (progressBar) {
-        // 用户点击进度条，标记为非自然播放
-        setTimeout(() => {
-          const progress = this.getPlayProgress();
-          if (progress && progress.percent > 0) {
-            this.logger.debug('用户手动调整进度', { percent: progress.percent });
-          }
-        }, 100);
+      // 检测进度条点击
+      const progressSelectors = [
+        '.j-flag', '.play-bar', '.m-pbar', '.playbar__progress',
+        '.prg', '.slider', '.ant-slider', 'div[role="slider"]'
+      ];
+      const isProgress = progressSelectors.some(selector =>
+        target.matches(selector) || target.closest(selector)
+      );
+      if (isProgress) {
+        this.logger.info('检测到进度条点击');
+        return;
       }
-    });
 
-    // 监听键盘事件
+      // ... 其他检测（上一曲、播放按钮等）
+    }, true); // 捕获阶段
+
+    // 键盘事件也需要监听，但键盘无法用捕获解决，保持原样
     document.addEventListener('keydown', (e) => {
       // Ctrl + → 或 播放器快捷键
       if ((e.ctrlKey && e.key === 'ArrowRight') || e.key === 'MediaTrackNext') {
@@ -126,22 +157,22 @@ class ContentScript {
       }
     });
 
-    // 监听播放状态变化
-    const audio = document.querySelector('audio');
-    if (audio) {
-      audio.addEventListener('pause', () => {
-        this.logger.debug('播放暂停');
-      });
+    // // 监听播放状态变化
+    // const audio = document.querySelector('audio');
+    // if (audio) {
+    //   audio.addEventListener('pause', () => {
+    //     this.logger.debug('播放暂停');
+    //   });
 
-      audio.addEventListener('play', () => {
-        this.logger.debug('继续播放');
-      });
+    //   audio.addEventListener('play', () => {
+    //     this.logger.debug('继续播放');
+    //   });
 
-      audio.addEventListener('ended', () => {
-        this.logger.debug('歌曲自然结束');
-        this.currentSong.isManualSkip = false; // 自然结束不是跳过
-      });
-    }
+    //   audio.addEventListener('ended', () => {
+    //     this.logger.debug('歌曲自然结束');
+    //     this.currentSong.isManualSkip = false; // 自然结束不是跳过
+    //   });
+    // }
   }
 
   trackPlayProgress() {
@@ -479,12 +510,24 @@ class ContentScript {
   /**
    * 同步歌曲状态到background
    */
+  // syncSongState() {
+  //   chrome.runtime.sendMessage({
+  //     type: 'SONG_STATE_UPDATE',
+  //     data: this.currentSong
+  //   }).catch(() => {
+  //     // background可能还没准备好，忽略错误
+  //   });
+  // }
   syncSongState() {
     chrome.runtime.sendMessage({
-      type: 'SONG_STATE_UPDATE',
-      data: this.currentSong
-    }).catch(() => {
-      // background可能还没准备好，忽略错误
+        type: 'SONG_STATE_UPDATE',
+        data: this.currentSong
+      }).catch(() => {
+      chrome.storage.local.get(['pendingStates'], (res) => {
+        const states = res.pendingStates || [];
+        states.push(this.currentSong);
+        chrome.storage.local.set({ pendingStates: states });
+      });
     });
   }
 
