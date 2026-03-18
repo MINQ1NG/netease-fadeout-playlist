@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h3 {
+      margin: 0 0 16px 0;
+      color: #d43c33;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-item {
+      margin-bottom: 12px;
+      padding: 8px;
+      background: #f8f8f8;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .status-label {
+      color: #666;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+    .status-value {
+      color: #333;
+      font-weight: 500;
+      word-break: break-all;
+    }
+    .status-value.error {
+      color: #f5222d;
+    }
+    .status-value.success {
+      color: #52c41a;
+    }
+    .status-value.warning {
+      color: #faad14;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      background: #d43c33;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.3s;
+      margin-top: 8px;
+    }
+    button:hover {
+      background: #b03028;
+    }
+    button.secondary {
+      background: #f0f0f0;
+      color: #333;
+      margin-top: 8px;
+    }
+    button.secondary:hover {
+      background: #e0e0e0;
+    }
+    .stats {
+      display: flex;
+      justify-content: space-between;
+      margin: 16px 0;
+      padding: 12px 0;
+      border-top: 1px solid #eee;
+      border-bottom: 1px solid #eee;
+    }
+    .stat-item {
+      text-align: center;
+      flex: 1;
+    }
+    .stat-number {
+      font-size: 20px;
+      font-weight: bold;
+      color: #d43c33;
+    }
+    .stat-label {
+      font-size: 11px;
+      color: #999;
+      margin-top: 4px;
+    }
+    .log-list {
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 11px;
+      background: #f8f8f8;
+      padding: 8px;
+      border-radius: 4px;
+      margin-top: 12px;
+    }
+    .log-item {
+      padding: 4px 0;
+      border-bottom: 1px solid #eee;
+      color: #666;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .log-item.error {
+      color: #f5222d;
+    }
+    .log-item.warning {
+      color: #faad14;
+    }
+    .log-item.success {
+      color: #52c41a;
+    }
+    .timestamp {
+      color: #999;
+      margin-right: 4px;
+    }
+    .footer {
+      margin-top: 16px;
+      text-align: center;
+      font-size: 11px;
+      color: #999;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h3>
+      <span>🎵 淡出歌单</span>
+      <span style="font-size: 11px; color: #999; margin-left: auto;" id="version">v1.0.0</span>
+    </h3>
+    
+    <div class="status-item">
+      <div class="status-label">🍪 Cookie状态</div>
+      <div class="status-value" id="cookieStatus">检查中...</div>
+    </div>
+    
+    <div class="status-item">
+      <div class="status-label">📋 淡出歌单</div>
+      <div class="status-value" id="playlistStatus">检查中...</div>
+    </div>
+    
+    <div class="stats">
+      <div class="stat-item">
+        <div class="stat-number" id="todayCount">0</div>
+        <div class="stat-label">今日添加</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-number" id="totalCount">0</div>
+        <div class="stat-label">累计</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-number" id="skipRate">0%</div>
+        <div class="stat-label">跳过率</div>
+      </div>
+    </div>
+    
+    <button id="refreshBtn">🔄 刷新状态</button>
+    <button class="secondary" id="openNeteaseBtn">🌐 打开网易云音乐</button>
+    
+    <div style="margin-top: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span style="font-size: 12px; color: #666;">📊 最近日志</span>
+        <span style="font-size: 10px; color: #999; cursor: pointer;" id="clearLogs">清除</span>
+      </div>
+      <div class="log-list" id="logList">
+        <div class="log-item">等待日志...</div>
+      </div>
+    </div>
+    
+    <div class="footer">
+      自动将跳过的歌曲加入淡出歌单
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
