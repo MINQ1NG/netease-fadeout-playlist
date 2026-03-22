@@ -1,11 +1,21 @@
 class Toast {
   constructor() {
     this.container = null;
-    this.init();
   }
 
-  init() {
-    // 创建Toast容器
+  // 确保容器存在
+  ensureContainer() {
+    if (this.container) return;
+    
+    if (!document.body) {
+      // body 尚不存在，监听 DOMContentLoaded
+      document.addEventListener('DOMContentLoaded', () => this.createContainer());
+      return;
+    }
+    this.createContainer();
+  }
+
+  createContainer() {
     this.container = document.createElement('div');
     this.container.id = 'netease-toast-container';
     this.container.style.cssText = `
@@ -22,6 +32,7 @@ class Toast {
   }
 
   show(message, type = 'info', duration = 3000) {
+    this.ensureContainer(); // 确保容器已存在
     const toast = document.createElement('div');
     toast.className = `netease-toast netease-toast-${type}`;
     
