@@ -45,7 +45,10 @@ class ContentScript {
     setInterval(() => this.syncSongState(), 1000);
     
     // 初始化获取一次歌曲信息
-    setTimeout(() => this.updateSongInfo(), 2000);
+    setTimeout(() => {
+      this.updateSongInfo();
+      this.updatePlayProgress();
+    }, 500); // 延迟半秒确保DOM已渲染
   }
 
   observePlayer() {
@@ -96,23 +99,9 @@ class ContentScript {
     document.addEventListener('click', (e) => {
       // 记录点击元素信息，方便调试
       const target = e.target;
-      this.logger.info('捕获到点击事件', {
-        tag: target.tagName,
-        id: target.id,
-        classes: target.className,
-        text: target.innerText?.substring(0, 30),
-        path: e.composedPath?.().map(el => el.tagName).join(' > ') // 事件路径
-      });
   
       // 检测下一曲按钮（覆盖更多选择器）
       const nextButtonSelectors = [
-        // '下一曲', '下一首', 'next', 'skip', '跳过',
-        // 'icon-next', 'btn-next', 'skip-btn', 'forward',
-        // 'control-next', 'skip-forward', 'step-forward',
-        // '播放下一首', '播放下一曲', '下一首歌',
-        // 'next-song', 'next-track', 'skip-track',
-        // 'forward-step', 'fast-forward', 'go-forward',
-        // '跳过歌曲', '跳过当前', '切换歌曲', '下一首歌曲',
         '.nxt', '.next-btn', '[data-action="next"]', '.icon-next',
         '.playbar__next', 'button[title="下一曲"]', 'button[aria-label="下一曲"]'
         // 根据实际日志添加更多选择器
@@ -123,11 +112,16 @@ class ContentScript {
       );
   
       if (isNext) {
-        this.logger.info('检测到下一曲点击');
+        this.logger.debug('检测到下一曲点击');
         e.preventDefault(); // 可选，但建议保留
+
+        this.updatePlayProgress();
         this.currentSong.isManualSkip = true;
         this.currentSong.lastClickTime = Date.now();
-        // this.handleNextButtonClick(e);
+
+
+        // 4. 立即同步一次状态到 background（减少延迟）
+        this.syncSongChange();
         return;
       }
 
@@ -140,7 +134,7 @@ class ContentScript {
         target.matches(selector) || target.closest(selector)
       );
       if (isProgress) {
-        this.logger.info('检测到进度条点击');
+        this.logger.debug('检测到进度条点击');
         return;
       }
 
@@ -157,22 +151,6 @@ class ContentScript {
       }
     });
 
-    // // 监听播放状态变化
-    // const audio = document.querySelector('audio');
-    // if (audio) {
-    //   audio.addEventListener('pause', () => {
-    //     this.logger.debug('播放暂停');
-    //   });
-
-    //   audio.addEventListener('play', () => {
-    //     this.logger.debug('继续播放');
-    //   });
-
-    //   audio.addEventListener('ended', () => {
-    //     this.logger.debug('歌曲自然结束');
-    //     this.currentSong.isManualSkip = false; // 自然结束不是跳过
-    //   });
-    // }
   }
 
   trackPlayProgress() {
@@ -371,40 +349,29 @@ class ContentScript {
    * @returns {string|null} 歌曲ID
    */
   getSongId() {
-    try {
-      // 方法1：从播放器数据属性获取
-      const player = document.querySelector('.m-player, .play-bar');
-      if (player && player.dataset && player.dataset.songid) {
-        return player.dataset.songid;
+    // 方法1：从头部区域获取（最稳定）
+    const headLink = document.querySelector('.head.j-flag a[href*="/song?id="]');
+    if (headLink) {
+      const href = headLink.getAttribute('href');
+      const match = href.match(/id=(\d+)/);
+      if (match) {
+        this.logger.debug('从头部链接获取到歌曲ID', match[1]);
+        return match[1];
       }
-
-      // 方法2：从音频元素获取
-      const audio = document.querySelector('audio');
-      if (audio && audio.src) {
-        const match = audio.src.match(/song\/(\d+)/);
-        if (match) {
-          return match[1];
-        }
-      }
-
-      // 方法3：从DOM中的data-id属性获取
-      const songElement = document.querySelector('[data-song-id], .song-id');
-      if (songElement && songElement.dataset && songElement.dataset.songId) {
-        return songElement.dataset.songId;
-      }
-
-      // 方法4：从URL参数获取
-      const urlParams = new URLSearchParams(window.location.search);
-      const id = urlParams.get('id');
-      if (id && /^\d+$/.test(id)) {
-        return id;
-      }
-
-      return null;
-    } catch (error) {
-      this.logger.debug('获取歌曲ID失败', error);
-      return null;
     }
+  
+    // 方法2：从音频元素解析（最后备选）
+    const audio = document.querySelector('audio');
+    if (audio && audio.src) {
+      const match = audio.src.match(/id=(\d+)/);
+      if (match) {
+        this.logger.debug('从音频src获取到歌曲ID', match[1]);
+        return match[1];
+      }
+    }
+  
+    this.logger.warn('无法获取歌曲ID');
+    return null;
   }
 
   /**
@@ -412,27 +379,28 @@ class ContentScript {
    * @returns {string|null} 歌曲名称
    */
   getSongName() {
-    try {
-      const selectors = [
-        '.song-name',
-        '.fc1',
-        '.tit',
-        '.f-thide',
-        '.song-title',
-        '.song_info .name'
-      ];
-      
-      for (const selector of selectors) {
-        const element = document.querySelector(selector);
-        if (element && element.textContent) {
-          return element.textContent.trim();
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      return null;
+    // 方法1：从歌词区域的名称链接获取
+    const nameLink = document.querySelector('.play .j-flag.words a.name');
+    if (nameLink && nameLink.textContent.trim()) {
+      const name = nameLink.textContent.trim();
+      this.logger.debug('从歌词区域获取到歌曲名', name);
+      return name;
     }
+  
+    // 方法2：从其他常见位置获取（降级）
+    const fallbackSelectors = [
+      '.song-name', '.fc1', '.tit', '.f-thide', '.song-title'
+    ];
+    for (const selector of fallbackSelectors) {
+      const el = document.querySelector(selector);
+      if (el && el.textContent.trim()) {
+        this.logger.info(`使用选择器 ${selector} 获取到歌曲名`, el.textContent.trim());
+        return el.textContent.trim();
+      }
+    }
+  
+    this.logger.warn('无法获取歌曲名称');
+    return null;
   }
 
   /**
@@ -477,10 +445,11 @@ class ContentScript {
    * 处理歌曲切换
    */
   handleSongChange() {
-    this.logger.info('检测到歌曲切换');
+    this.logger.debug('检测到歌曲切换');
     
     // 保存当前歌曲信息
     this.updateSongInfo();
+    this.updatePlayProgress();
     
     // 重置手动跳过标记（新歌）
     this.currentSong.isManualSkip = false;
@@ -493,36 +462,42 @@ class ContentScript {
    * 更新歌曲信息
    */
   updateSongInfo() {
-    const songId = this.getSongId();
-    if (songId) {
-      this.currentSong.id = songId;
-      this.currentSong.name = this.getSongName();
-      this.currentSong.artists = this.getArtists();
-      
-      this.logger.debug('更新歌曲信息', {
-        id: this.currentSong.id,
-        name: this.currentSong.name,
-        artists: this.currentSong.artists
-      });
-    }
+    const newId = this.getSongId();
+    const newName = this.getSongName();
+  
+    if (newId) this.currentSong.id = newId;
+    if (newName) this.currentSong.name = newName;
+  
+    this.currentSong.artists = this.getArtists();   // 可沿用之前的方法
+    //this.currentSong.album = this.getAlbum();       // 可选
+  
+    this.logger.debug('更新后的歌曲信息', {
+      id: this.currentSong.id,
+      name: this.currentSong.name,
+      artists: this.currentSong.artists
+    });
   }
 
-  /**
-   * 同步歌曲状态到background
-   */
-  // syncSongState() {
-  //   chrome.runtime.sendMessage({
-  //     type: 'SONG_STATE_UPDATE',
-  //     data: this.currentSong
-  //   }).catch(() => {
-  //     // background可能还没准备好，忽略错误
-  //   });
-  // }
+  syncSongChange() {
+    chrome.runtime.sendMessage({
+      type: 'SONG_CHANGE_UPDATE',
+      data: this.currentSong
+    }).catch((err) => {
+      this.logger.warn('发送消息失败，使用storage降级', err);
+      chrome.storage.local.get(['pendingStates'], (res) => {
+        const states = res.pendingStates || [];
+        states.push(this.currentSong);
+        chrome.storage.local.set({ pendingStates: states });
+      });
+    });
+  }
+
   syncSongState() {
     chrome.runtime.sendMessage({
-        type: 'SONG_STATE_UPDATE',
-        data: this.currentSong
-      }).catch(() => {
+      type: 'SONG_STATE_UPDATE',
+      data: this.currentSong
+    }).catch((err) => {
+      this.logger.warn('发送消息失败，使用storage降级', err);
       chrome.storage.local.get(['pendingStates'], (res) => {
         const states = res.pendingStates || [];
         states.push(this.currentSong);

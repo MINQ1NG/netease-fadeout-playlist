@@ -14,7 +14,8 @@ class BackgroundService {
       fadeOutPlaylistName: null,
       lastCookieRefresh: null
     };
-    
+
+    this.pendingInterval = null;
     this.init();
   }
 
@@ -35,6 +36,8 @@ class BackgroundService {
     
     // 定时任务
     this.setupScheduledTasks();
+
+    this.startPendingProcessor();
   }
 
   async loadConfig() {
@@ -115,6 +118,7 @@ class BackgroundService {
 
   setupListeners() {
     // 监听下一曲请求
+    this.logger.warn('监听');
     chrome.webRequest.onBeforeRequest.addListener(
       this.handleNextRequest.bind(this),
       { urls: ["*://music.163.com/*/queue/enhance/play/next*"] },
@@ -129,6 +133,7 @@ class BackgroundService {
   }
 
   async handleNextRequest(details) {
+    this.logger.warn('handleNextRequest');
     try {
       // 获取当前标签页的歌曲信息
       const songInfo = await this.getCurrentSongFromTab(details.tabId);
@@ -138,7 +143,7 @@ class BackgroundService {
         return { cancel: false };
       }
 
-      this.logger.info('检测到下一曲请求', {
+      this.logger.warn('检测到下一曲请求', {
         songName: songInfo.name,
         progress: songInfo.playPercent
       });
@@ -286,6 +291,36 @@ class BackgroundService {
     });
   }
 
+  startPendingProcessor() {
+    this.pendingInterval = setInterval(() => {
+      this.processPendingStates();
+    }, 5000);
+  }
+
+  processPendingStates() {
+    chrome.storage.local.get(['pendingStates'], (res) => {
+      // 处理逻辑...
+      const states = res.pendingStates || [];
+      if (states.length > 0) {
+        this.logger.debug(`处理 ${states.length} 条待处理状态`);
+        // 取最新一条（或全部）进行处理，具体逻辑根据你的业务决定
+        const latest = states[states.length - 1];
+        // 合并到当前状态
+        if (latest) {
+          this.currentSong = latest;
+        }
+        // 清空或移除已处理的
+        chrome.storage.local.set({ pendingStates: [] });
+      }
+    });
+  }
+
+  onDisable() {
+    if (this.pendingInterval) {
+      clearInterval(this.pendingInterval);
+    }
+  }
+
   handleMessage(message, sender, sendResponse) {
     const { type, data } = message;
 
@@ -308,6 +343,20 @@ class BackgroundService {
         sendResponse(this.config);
         break;
 
+        case 'SONG_CHANGE_UPDATE':
+          // 保存当前歌曲状态
+          this.currentSong = data;
+          this.logger.info('收到歌曲变更', data);
+          sendResponse({ status: 'ok' });
+          break;
+
+      case 'SONG_STATE_UPDATE':
+        // 保存当前歌曲状态
+        this.currentSong = data;
+        //this.logger.info('收到歌曲状态更新', data);
+        sendResponse({ status: 'ok' });
+        break;
+
       case 'REFRESH_COOKIES':
         this.initializeCookies().then(() => sendResponse({ success: true }));
         return true;
@@ -316,6 +365,7 @@ class BackgroundService {
         this.initializePlaylist().then(() => sendResponse({ success: true }));
         return true;
     }
+    return true;
   }
 
   notifyContentScript(type, data) {
