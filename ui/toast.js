@@ -82,6 +82,10 @@ class Toast {
     this.show(`歌曲“${songName}”已加入淡出歌单`, 'success', 4000);
   }
 
+  showAlreadyAdded(songName) {
+    this.show(`歌曲“${songName}”已在淡出歌单`, 'success', 4000);
+  }
+
   showCookieIssue() {
     this.show('Cookie需要更新，请重新登录网易云音乐', 'warning', 5000);
   }

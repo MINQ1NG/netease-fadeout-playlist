@@ -6,6 +6,7 @@ importScripts(
 
 class BackgroundService {
   constructor() {
+    this.processedSongIds = new Set();
     this.logger = new Logger('Background');
     this.cookieManager = new CookieManager(this.logger);
     this.playlistManager = null;
@@ -33,10 +34,11 @@ class BackgroundService {
     
     // 设置监听器
     this.setupListeners();
+    this.logger.info();('监听中...');
     
     // 定时任务
     this.setupScheduledTasks();
-
+    this.startCleanupTimer();
     this.startPendingProcessor();
   }
 
@@ -117,49 +119,13 @@ class BackgroundService {
   }
 
   setupListeners() {
-    // 监听下一曲请求
-    this.logger.warn('监听');
-    chrome.webRequest.onBeforeRequest.addListener(
-      this.handleNextRequest.bind(this),
-      { urls: ["*://music.163.com/*/queue/enhance/play/next*"] },
-      ["requestBody"]
-    );
-
     // 监听来自content script的消息
     chrome.runtime.onMessage.addListener(this.handleMessage.bind(this));
 
     // 监听标签页更新
     chrome.tabs.onUpdated.addListener(this.handleTabUpdate.bind(this));
   }
-
-  async handleNextRequest(details) {
-    this.logger.warn('handleNextRequest');
-    try {
-      // 获取当前标签页的歌曲信息
-      const songInfo = await this.getCurrentSongFromTab(details.tabId);
-      
-      if (!songInfo || !songInfo.id) {
-        this.logger.debug('未获取到歌曲信息');
-        return { cancel: false };
-      }
-
-      this.logger.warn('检测到下一曲请求', {
-        songName: songInfo.name,
-        progress: songInfo.playPercent
-      });
-
-      // 判断是否需要加入歌单
-      if (await this.shouldAddToPlaylist(songInfo)) {
-        await this.addSongToPlaylist(songInfo);
-      }
-
-    } catch (error) {
-      this.logger.error('处理下一曲请求失败', error);
-    }
-
-    return { cancel: false };
-  }
-
+  
   async shouldAddToPlaylist(song) {
     // 基本条件检查
     if (!song || !song.id) {
@@ -168,7 +134,7 @@ class BackgroundService {
 
     // 检查进度
     if (song.playPercent >= 50) {
-      this.logger.debug('歌曲播放超过50%，不加入歌单', {
+      this.logger.info('歌曲播放超过50%，不加入歌单', {
         name: song.name,
         progress: song.playPercent
       });
@@ -177,17 +143,17 @@ class BackgroundService {
 
     // 检查是否为手动跳过
     if (!song.isManualSkip) {
-      this.logger.debug('非手动跳过，不加入歌单', {
+      this.logger.info('非手动跳过，不加入歌单', {
         name: song.name
       });
       return false;
     }
 
     // 检查歌曲时长
-    if (song.duration < 30) {
-      this.logger.debug('歌曲时长过短，不加入歌单', {
+    if (song.progress < 30) {
+      this.logger.info('歌曲时长过短，不加入歌单', {
         name: song.name,
-        duration: song.duration
+        progress: song.progress
       });
       return false;
     }
@@ -219,17 +185,17 @@ class BackgroundService {
         throw new Error('无法获取Cookie');
       }
 
-      // 检查歌曲是否已在歌单中
-      const exists = await this.playlistManager.checkSongInPlaylist(
-        song.id,
-        this.config.fadeOutPlaylistId,
-        cookies.raw
-      );
+      // 检查歌曲是否已在歌单中 存在问题 待修复
+      // const exists = await this.playlistManager.checkSongInPlaylist(
+      //   song.id,
+      //   this.config.fadeOutPlaylistId,
+      //   cookies.raw
+      // );
 
-      if (exists) {
-        this.logger.info('歌曲已在歌单中', { name: song.name });
-        return;
-      }
+      // if (exists) {
+      //   this.logger.info('歌曲已在歌单中', { name: song.name });
+      //   return;
+      // }
 
       // 添加到歌单
       const result = await this.playlistManager.addToPlaylist(
@@ -239,16 +205,24 @@ class BackgroundService {
       );
 
       if (result.success) {
-        this.logger.info('歌曲加入歌单成功', {
-          name: song.name,
-          id: song.id
-        });
+        if (result.data.code == 502) {
+          this.logger.debug('歌曲已在淡出歌单中', { name: song.name, id: song.id });
 
-        // 通知content script显示成功提示
-        this.notifyContentScript('SONG_ADDED', {
-          songName: song.name,
-          playlistName: this.config.fadeOutPlaylistName
-        });
+          // 通知content script显示成功提示
+          this.notifyContentScript('ALREADY_ADDED', {
+            songName: song.name,
+            playlistName: this.config.fadeOutPlaylistName
+          });
+        } else{
+          this.logger.debug('歌曲加入歌单成功', { name: song.name, id: song.id });
+
+          // 通知content script显示成功提示
+          this.notifyContentScript('SONG_ADDED', {
+            songName: song.name,
+            playlistName: this.config.fadeOutPlaylistName
+          });
+        }
+        
 
       } else {
         // 处理特定错误
@@ -321,7 +295,18 @@ class BackgroundService {
     }
   }
 
-  handleMessage(message, sender, sendResponse) {
+  startCleanupTimer() {
+    setInterval(() => {
+      // 可以按时间清理，但简单起见可让 Set 自然增长，或根据业务选择清理
+      // 如果担心内存，可以只保留最近 N 条
+      if (this.processedSongIds.size > 100) {
+        // 简单清除所有，更精细可基于时间戳
+        this.processedSongIds.clear();
+      }
+    }, 3600000); // 每小时清理一次
+  }
+
+  async handleMessage(message, sender, sendResponse) {
     const { type, data } = message;
 
     switch (type) {
@@ -343,17 +328,34 @@ class BackgroundService {
         sendResponse(this.config);
         break;
 
-        case 'SONG_CHANGE_UPDATE':
-          // 保存当前歌曲状态
-          this.currentSong = data;
-          this.logger.info('收到歌曲变更', data);
-          sendResponse({ status: 'ok' });
+      case 'SONG_CHANGE_UPDATE':
+        // 保存当前歌曲状态
+        const song = data;
+        this.logger.debug('收到歌曲变更', song);
+        // 去重检查（必须放在最前面）
+        if (this.processedSongIds.has(song.id)) {
+          this.logger.debug('歌曲已处理过，跳过');
+          sendResponse({ status: 'skipped' });
           break;
+        }
+        // 先加入去重集合，防止重复处理（即使后续判断失败也标记，避免反复尝试）
+        this.processedSongIds.add(song.id);
+        setTimeout(() => {this.processedSongIds.delete(song.id);}, 7200000);
+        
+        const shouldAdd = await this.shouldAddToPlaylist(song);
+        if (shouldAdd) {
+          await this.addSongToPlaylist(song);
+        } else {
+          this.logger.debug('不满足添加条件，跳过', { songId: song.id, reason: 'shouldAddToPlaylist returned false' });
+        }
+
+        
+        sendResponse({ status: 'ok' });
+        break;
 
       case 'SONG_STATE_UPDATE':
         // 保存当前歌曲状态
         this.currentSong = data;
-        //this.logger.info('收到歌曲状态更新', data);
         sendResponse({ status: 'ok' });
         break;
 

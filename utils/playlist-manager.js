@@ -239,7 +239,7 @@ class PlaylistManager {
       const data = await response.json();
 
       if (data.code === 200) {
-        this.logger.info('歌曲添加成功', { songId, playlistId });
+        this.logger.debug('歌曲添加成功', { songId, playlistId });
         return { success: true, data };
       } else {
         // 处理特定错误码
@@ -251,6 +251,9 @@ class PlaylistManager {
             this.logger.logPlaylistIssue('添加失败：歌单不存在', { playlistId });
             return { success: false, needRefreshPlaylist: true };
           case 502:
+            if (data.message === "歌单内歌曲重复") {
+              return { success: true, data };
+            }
             if (retryCount < this.retryCount) {
               this.logger.warn(`添加失败，${this.retryDelay/1000}秒后重试`, { retryCount });
               await new Promise(r => setTimeout(r, this.retryDelay));
@@ -297,6 +300,79 @@ class PlaylistManager {
     } catch (error) {
       this.logger.logApiIssue('检查歌曲是否在歌单时失败', error);
       return false;
+    }
+  }
+
+
+  /**
+   * 获取“我喜欢的音乐”歌单 ID
+   */
+  async getFavoritePlaylistId(cookieString) {
+    try {
+      // 获取用户所有歌单
+      const response = await fetch(
+        `https://music.163.com/api/user/playlist/?limit=100&offset=0`,
+        { headers: { 'Cookie': cookieString } }
+      );
+
+      const data = await response.json();
+      
+      if (data.code === 200 && data.playlist) {
+        // 查找“我喜欢的音乐”歌单（通常有特殊标记）
+        const favorite = data.playlist.find(p => 
+          p.specialType === 5 ||  // 网易云特殊类型：我喜欢的音乐
+          p.name === '我喜欢的音乐' ||
+          p.name === '我喜欢的音乐' ||
+          p.name.includes('喜欢的音乐')
+        );
+        
+        if (favorite) {
+          this.logger.info('找到我喜欢的音乐歌单', { id: favorite.id, name: favorite.name });
+          return favorite.id;
+        }
+      }
+      
+      this.logger.warn('未找到我喜欢的音乐歌单');
+      return null;
+    } catch (error) {
+      this.logger.error('获取我喜欢的音乐歌单失败', error);
+      return null;
+    }
+  }
+
+  /**
+   * 从歌单中移除歌曲
+   */
+  async removeFromPlaylist(songId, playlistId, cookieString) {
+    try {
+      this.logger.debug('尝试从歌单移除歌曲', { songId, playlistId });
+
+      const response = await fetch('https://music.163.com/api/playlist/manipulate/tracks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': cookieString
+        },
+        body: new URLSearchParams({
+          op: 'del',              // del 表示删除
+          pid: playlistId,
+          trackIds: `[${songId}]`
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.code === 200) {
+        this.logger.info('歌曲移除成功', { songId, playlistId });
+        return { success: true, data };
+      } else {
+        this.logger.logApiIssue('移除失败', { code: data.code, message: data.message });
+        return { success: false, error: data };
+      }
+
+    } catch (error) {
+      this.logger.logApiIssue('移除歌曲请求失败', error);
+      return { success: false, error };
     }
   }
 }

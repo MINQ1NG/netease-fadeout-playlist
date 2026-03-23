@@ -1,6 +1,5 @@
 class ContentScript {
   constructor() {
-    console.log('[ContentScript] 构造函数开始执行');
     this.logger = new Logger('Content');
     this.currentSong = {
       id: null,
@@ -24,18 +23,15 @@ class ContentScript {
   }
 
   init() {
-    this.logger.info('[init]内容脚本启动');
+    this.logger.debug('[init]内容脚本启动');
     
     // 监听DOM变化
-    console.log('[init] 监听DOM变化');
     this.observePlayer();
     
     // 监听点击事件
-    console.log('[init] 监听点击事件');
     this.trackUserClicks();
     
     // 跟踪播放进度
-    console.log('[init] 跟踪播放进度');
     this.trackPlayProgress();
     
     // 监听来自background的消息
@@ -523,6 +519,14 @@ class ContentScript {
           // 更新配置
           this.config = { ...this.config, ...data };
           this.logger.debug('配置已更新', this.config);
+          sendResponse({ success: true });
+          break;
+
+        case 'ALREADY_ADDED':
+          // 歌曲已在歌单内提示
+          if (data && data.songName) {
+            toast.showAlreadyAdded(data.songName);
+          }
           sendResponse({ success: true });
           break;
 

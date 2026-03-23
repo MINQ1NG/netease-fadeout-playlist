@@ -127,7 +127,7 @@ class CookieManager {
       const data = await response.json();
       
       if (data.code === 200) {
-        this.logger.info('Cookie验证成功 - 通过收藏接口');
+        this.logger.debug('Cookie验证成功 - 通过收藏接口');
         return true;
       }
       
@@ -492,7 +492,7 @@ class CookieManager {
         // 保存到storage
         await this.saveCookies(userCookie);
         
-        this.logger.info('Cookie获取成功', {
+        this.logger.debug('Cookie获取成功', {
           hasMusicU: !!userCookie.MUSIC_U,
           hasCsrf: !!userCookie.__csrf,
           cookieCount: cookies.length,
