@@ -136,6 +136,7 @@ class BackgroundService {
     if (song.playPercent >= 50) {
       this.logger.info('歌曲播放超过50%，不加入歌单', {
         name: song.name,
+        artists: song.artists,
         progress: song.playPercent
       });
       return false;
@@ -144,7 +145,8 @@ class BackgroundService {
     // 检查是否为手动跳过
     if (!song.isManualSkip) {
       this.logger.info('非手动跳过，不加入歌单', {
-        name: song.name
+        name: song.name,
+        artists: song.artists,
       });
       return false;
     }
@@ -153,6 +155,7 @@ class BackgroundService {
     if (song.progress < 30) {
       this.logger.info('歌曲时长过短，不加入歌单', {
         name: song.name,
+        artists: song.artists,
         progress: song.progress
       });
       return false;
@@ -193,7 +196,7 @@ class BackgroundService {
       // );
 
       // if (exists) {
-      //   this.logger.info('歌曲已在歌单中', { name: song.name });
+      //   this.logger.info('歌曲已在歌单中', { name: song.name, artists: song.artists });
       //   return;
       // }
 
@@ -206,19 +209,21 @@ class BackgroundService {
 
       if (result.success) {
         if (result.data.code == 502) {
-          this.logger.debug('歌曲已在淡出歌单中', { name: song.name, id: song.id });
+          this.logger.debug('歌曲已在淡出歌单中', { name: song.name, artists: song.artists, id: song.id });
 
           // 通知content script显示成功提示
           this.notifyContentScript('ALREADY_ADDED', {
             songName: song.name,
+            artists: song.artists,
             playlistName: this.config.fadeOutPlaylistName
           });
         } else{
-          this.logger.debug('歌曲加入歌单成功', { name: song.name, id: song.id });
+          this.logger.debug('歌曲加入歌单成功', { name: song.name, artists: song.artists, id: song.id });
 
           // 通知content script显示成功提示
           this.notifyContentScript('SONG_ADDED', {
             songName: song.name,
+            songArtists: song.artists,
             playlistName: this.config.fadeOutPlaylistName
           });
         }
@@ -237,7 +242,8 @@ class BackgroundService {
         } else {
           this.logger.logApiIssue('添加失败', result.error);
           this.notifyContentScript('ADD_FAILED', {
-            songName: song.name
+            songName: song.name,
+            songArtists: song.artists,
           });
         }
       }
@@ -245,7 +251,8 @@ class BackgroundService {
     } catch (error) {
       this.logger.error('添加歌曲到歌单失败', error);
       this.notifyContentScript('ADD_FAILED', {
-        songName: song.name
+        songName: song.name,
+        songArtists: song.artists
       });
     }
   }

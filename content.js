@@ -19,6 +19,8 @@ class ContentScript {
       fadeOutPlaylistName: null
     };
 
+    // this.BlackArtists = ['SoKo','华晨宇','林忆莲','lis'];
+
     this.init();
   }
 
@@ -175,56 +177,7 @@ class ContentScript {
    */
   getPlayProgress() {
     try {
-      // 方法1：从音频元素获取（最准确）
-      const audio = document.querySelector('audio');
-      if (audio && audio.duration && !isNaN(audio.duration)) {
-        const currentTime = audio.currentTime || 0;
-        const duration = audio.duration || 0;
-        return {
-          currentTime: currentTime,
-          duration: duration,
-          percent: duration > 0 ? (currentTime / duration) * 100 : 0
-        };
-      }
-
-      // 方法2：从进度条样式获取
-      const progressBar = document.querySelector('.j-flag, .playbar-progress, .m-pbar .cur');
-      if (progressBar && progressBar.style.width) {
-        const percent = parseFloat(progressBar.style.width) || 0;
-        // 尝试获取总时长来计算具体时间
-        const duration = this.getDurationFromDOM();
-        if (duration > 0) {
-          return {
-            currentTime: (percent / 100) * duration,
-            duration: duration,
-            percent: percent
-          };
-        }
-        return {
-          currentTime: null,
-          duration: null,
-          percent: percent
-        };
-      }
-
-      // 方法3：从时间显示获取（网易云经典界面）
-      const timeCurrent = document.querySelector('.time-current, .play-time, .current-time');
-      const timeTotal = document.querySelector('.time-total, .total-time, .duration');
-      
-      if (timeCurrent && timeTotal) {
-        const current = this.parseTime(timeCurrent.textContent);
-        const total = this.parseTime(timeTotal.textContent);
-        
-        if (total > 0) {
-          return {
-            currentTime: current,
-            duration: total,
-            percent: (current / total) * 100
-          };
-        }
-      }
-
-      // 方法4：从播放器状态获取（新版界面）
+      // 从播放器状态获取（新版界面）
       const timeInfo = document.querySelector('.time_info, .time');
       if (timeInfo) {
         const times = timeInfo.textContent.split('/');
@@ -410,11 +363,11 @@ class ContentScript {
       
       artistElements.forEach(el => {
         if (el.textContent && el.textContent.trim()) {
-          artists.push(el.textContent.trim());
+          artists.push(el.textContent.trim().split('/'));
         }
       });
       
-      return artists;
+      return artists[0];
     } catch (error) {
       return [];
     }
@@ -446,6 +399,24 @@ class ContentScript {
     // 保存当前歌曲信息
     this.updateSongInfo();
     this.updatePlayProgress();
+
+    //TODO: 跳过拉黑的歌手
+    // const maxSkips = 10;  // 最大跳过次数
+    // let skipCount = 0;
+    // // 只要当前歌曲作者在黑名单中，就继续跳过
+    // while (skipCount < maxSkips && await this.isArtistBlacklisted()) {
+    //   this.logger.info(`跳过黑名单作者: ${this.currentSong.artists}`);
+    //   await this.nextSongRequest();       // 模拟点击下一曲
+    //   await this.delay(500);              // 等待页面更新
+    //   // 更新为新歌曲信息
+    //   this.updateSongInfo();    
+    //   this.updatePlayProgress();
+    //   skipCount++;
+    // }
+
+    // if (skipCount >= maxSkips) {
+    //   this.logger.warn('跳过次数过多，可能全是黑名单作者');
+    // }
     
     // 重置手动跳过标记（新歌）
     this.currentSong.isManualSkip = false;
@@ -453,6 +424,37 @@ class ContentScript {
     // 同步状态到background
     this.syncSongState();
   }
+
+  // async isArtistBlacklisted(){
+  //   const artists = this.currentSong.artists || [];
+  //   // 只要任意一个作者在黑名单中，就跳过
+  //   return artists.some(artist => this.BlackArtists.includes(artist));
+  // }
+
+  // /**
+  //  * 模拟点击下一曲按钮，并等待切换完成
+  //  */
+  // async nextSongRequest() {
+  //   return new Promise((resolve) => {
+  //     const nextButton = document.querySelector('.nxt, .next-btn, [data-action="next"]');
+  //     if (nextButton) {
+  //       nextButton.click();
+  //       this.logger.debug('已模拟点击下一曲按钮');
+  //       // 等待下一曲生效（足够 DOM 更新）
+  //       setTimeout(resolve, 300);
+  //     } else {
+  //       this.logger.warn('未找到下一曲按钮');
+  //       resolve();
+  //     }
+  //   });
+  // }
+
+  // /**
+  //  * 延迟辅助函数
+  //  */
+  // async delay(ms) {
+  //   return new Promise(resolve => setTimeout(resolve, ms));
+  // }
 
   /**
    * 更新歌曲信息
@@ -525,7 +527,7 @@ class ContentScript {
         case 'ALREADY_ADDED':
           // 歌曲已在歌单内提示
           if (data && data.songName) {
-            toast.showAlreadyAdded(data.songName);
+            toast.showAlreadyAdded(data.songName, data.songArtists.join('/'));
           }
           sendResponse({ success: true });
           break;
@@ -533,7 +535,7 @@ class ContentScript {
         case 'SONG_ADDED':
           // 歌曲添加成功提示
           if (data && data.songName) {
-            toast.showSongAdded(data.songName);
+            toast.showSongAdded(data.songName, data.songArtists.join('/'));
           }
           sendResponse({ success: true });
           break;
@@ -552,7 +554,7 @@ class ContentScript {
 
         case 'ADD_FAILED':
           if (data && data.songName) {
-            toast.showAddFailed(data.songName);
+            toast.showAddFailed(data.songName, data.songArtists.join('/'));
           }
           sendResponse({ success: true });
           break;

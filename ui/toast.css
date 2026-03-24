@@ -1,3 +1,38 @@
+/* 歌曲信息样式 */
+.toast-song-info {
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.toast-songname {
+  font-weight: bold;
+  color: #fff;
+}
+
+.toast-artists {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+}
+
+.toast-message {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 2px;
+}
+
+/* 根据不同类型的边框颜色微调文字颜色 */
+.netease-toast-success .toast-songname {
+  color: #fff;
+}
+
+.netease-toast-success .toast-artists {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.netease-toast-warning .toast-songname {
+  color: #fff;
+}
+
 #netease-toast-container {
   position: fixed;
   bottom: 20px;

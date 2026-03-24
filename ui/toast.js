@@ -31,17 +31,36 @@ class Toast {
     document.body.appendChild(this.container);
   }
 
-  show(message, type = 'info', duration = 3000) {
+  show(message, type = 'info', duration = 3000, songName = null, songArtists = null,) {
     this.ensureContainer(); // 确保容器已存在
     const toast = document.createElement('div');
     toast.className = `netease-toast netease-toast-${type}`;
     
     // 添加图标
     const icon = this.getIcon(type);
+
+    // 如果有歌曲信息，显示歌曲名称（加粗）和歌手（浅灰色）
+    let contentHtml = '';
+    if (songName) {
+      let artists = '';
+ 
+      artists = `<span class="toast-artists"> - ${this.escapeHtml(songArtists)}</span>`;
+      
+      contentHtml = `
+        <div class="toast-song-info">
+          <strong class="toast-songname">${this.escapeHtml(songName)}</strong>
+          ${artists}
+        </div>
+      `;
+    }
+    if (message) {
+      contentHtml += `<div class="toast-message">${this.escapeHtml(message)}</div>`;
+    }
+    
     
     toast.innerHTML = `
       <div class="toast-icon">${icon}</div>
-      <div class="toast-content">${this.escapeHtml(message)}</div>
+      <div class="toast-content">${contentHtml}</div>
       <div class="toast-progress"></div>
     `;
 
@@ -78,12 +97,12 @@ class Toast {
   }
 
   // 特定场景的提示
-  showSongAdded(songName) {
-    this.show(`歌曲“${songName}”已加入淡出歌单`, 'success', 4000);
+  showSongAdded(songName, songArtists) {
+    this.show(`已加入淡出歌单`, 'success', 4000, songName, songArtists);
   }
 
-  showAlreadyAdded(songName) {
-    this.show(`歌曲“${songName}”已在淡出歌单`, 'success', 4000);
+  showAlreadyAdded(songName, songArtists) {
+    this.show(`已在淡出歌单`, 'success', 4000, songName, songArtists);
   }
 
   showCookieIssue() {
@@ -94,8 +113,8 @@ class Toast {
     this.show('未找到淡出歌单，请先创建一个包含"淡出"名称的歌单', 'error', 6000);
   }
 
-  showAddFailed(songName) {
-    this.show(`歌曲“${songName}”加入歌单失败，请检查网络`, 'error', 4000);
+  showAddFailed(songName, songArtists) {
+    this.show(`加入歌单失败，请检查网络`, 'error', 4000, songName, songArtists);
   }
 
   showStatusError(errorMsg) {

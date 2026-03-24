@@ -53,8 +53,8 @@
     button {
       width: 100%;
       padding: 10px;
-      background: #d43c33;
-      color: white;
+      background: #f0f0f0;
+      color: #333;
       border: none;
       border-radius: 4px;
       font-size: 14px;
@@ -63,17 +63,17 @@
       margin-top: 8px;
     }
     button:hover {
-      background: #b03028;
+      background: #e0e0e0;
     }
     button.secondary {
-      background: #f0f0f0;
-      color: #333;
+      background: #d43c33;
+      color: white;
       margin-top: 8px;
     }
     button.secondary:hover {
-      background: #e0e0e0;
+      background: #b03028;
     }
-    .stats {
+    /* .stats {
       display: flex;
       justify-content: space-between;
       margin: 16px 0;
@@ -94,7 +94,7 @@
       font-size: 11px;
       color: #999;
       margin-top: 4px;
-    }
+    } */
     .log-list {
       max-height: 200px;
       overflow-y: auto;
@@ -150,7 +150,7 @@
       <div class="status-value" id="playlistStatus">检查中...</div>
     </div>
     
-    <div class="stats">
+    <!-- <div class="stats">
       <div class="stat-item">
         <div class="stat-number" id="todayCount">0</div>
         <div class="stat-label">今日添加</div>
@@ -163,7 +163,7 @@
         <div class="stat-number" id="skipRate">0%</div>
         <div class="stat-label">跳过率</div>
       </div>
-    </div>
+    </div> -->
     
     <button id="refreshBtn">🔄 刷新状态</button>
     <button class="secondary" id="openNeteaseBtn">🌐 打开网易云音乐</button>
