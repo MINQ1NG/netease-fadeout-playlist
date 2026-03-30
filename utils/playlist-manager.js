@@ -7,55 +7,58 @@ class PlaylistManager {
   }
 
   // utils/playlist-manager.js - 修复findFadeOutPlaylist方法
+  async getPlayLists(cookieString) {
+    // 第一步：先获取当前登录用户的ID
+    const userId = await this.getCurrentUserId(cookieString);
+    if (!userId) {
+      this.logger.logPlaylistIssue('无法获取用户ID，请确认登录状态');
+      return null;
+    }
+    
+    this.logger.debug('获取到用户ID', { userId });
 
-  async findFadeOutPlaylist(cookieString) {
+    // 第二步：使用用户ID获取该用户的歌单
+    // 使用正确的API路径（参考搜索结果中的 /user/playlist [citation:9]）
+    const response = await fetch(
+      `https://music.163.com/api/user/playlist/?uid=${userId}&limit=100&offset=0`,
+      {
+        headers: { 
+          'Cookie': cookieString,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://music.163.com/',
+          'Accept': 'application/json, text/plain, */*'
+        },
+        credentials: 'include'
+      }
+    );
+
+    if (!response.ok) {
+      this.logger.logPlaylistIssue('获取歌单列表HTTP错误', {
+        status: response.status,
+        statusText: response.statusText
+      });
+      return null;
+    }
+
+    const data = await response.json();
+    
+    // 检查返回码
+    if (data.code !== 200) {
+      this.logger.logPlaylistIssue('获取歌单列表失败', { code: data.code });
+      
+      // 如果返回301，说明需要登录
+      if (data.code === 301) {
+        this.logger.logCookieIssue('需要重新登录');
+      }
+      return null;
+    }
+    return data;
+  }
+
+  async findFadeOutPlaylist(data) {
     try {
+      // const data = await this.getPlayLists(cookieString);
       this.logger.debug('开始查找淡出歌单');
-
-      // 第一步：先获取当前登录用户的ID
-      const userId = await this.getCurrentUserId(cookieString);
-      if (!userId) {
-        this.logger.logPlaylistIssue('无法获取用户ID，请确认登录状态');
-        return null;
-      }
-      
-      this.logger.debug('获取到用户ID', { userId });
-
-      // 第二步：使用用户ID获取该用户的歌单
-      // 使用正确的API路径（参考搜索结果中的 /user/playlist [citation:9]）
-      const response = await fetch(
-        `https://music.163.com/api/user/playlist/?uid=${userId}&limit=100&offset=0`,
-        {
-          headers: { 
-            'Cookie': cookieString,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://music.163.com/',
-            'Accept': 'application/json, text/plain, */*'
-          },
-          credentials: 'include'
-        }
-      );
-
-      if (!response.ok) {
-        this.logger.logPlaylistIssue('获取歌单列表HTTP错误', {
-          status: response.status,
-          statusText: response.statusText
-        });
-        return null;
-      }
-
-      const data = await response.json();
-      
-      // 检查返回码
-      if (data.code !== 200) {
-        this.logger.logPlaylistIssue('获取歌单列表失败', { code: data.code });
-        
-        // 如果返回301，说明需要登录
-        if (data.code === 301) {
-          this.logger.logCookieIssue('需要重新登录');
-        }
-        return null;
-      }
 
       // 检查是否有歌单数据
       if (!data.playlist || !Array.isArray(data.playlist)) {
@@ -82,7 +85,7 @@ class PlaylistManager {
         return null;
       }
 
-      this.logger.info('找到淡出歌单', {
+      this.logger.debug('找到淡出歌单', {
         id: fadeOutPlaylist.id,
         name: fadeOutPlaylist.name,
         trackCount: fadeOutPlaylist.trackCount
@@ -279,6 +282,75 @@ class PlaylistManager {
     }
   }
 
+  /**
+   * 从指定歌单中删除歌曲
+   * @param {string|number} songId - 歌曲ID
+   * @param {string|number} playlistId - 歌单ID
+   * @param {string} cookieString - 登录Cookie
+   * @param {number} retryCount - 当前重试次数（内部使用）
+   * @returns {Promise<{success: boolean, error?: object}>}
+   */
+  async deleteFromPlaylist(songId, playlistId, cookieString, retryCount = 0) {
+    try {
+      this.logger.debug('尝试从歌单删除歌曲', { songId, playlistId });
+
+      const response = await fetch('https://music.163.com/api/playlist/manipulate/tracks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': cookieString,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        },
+        body: new URLSearchParams({
+          op: 'del',              // 删除操作
+          pid: playlistId,
+          trackIds: `[${songId}]`
+        }),
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+
+      if (data.code === 200) {
+        this.logger.debug('歌曲删除成功', { songId, playlistId });
+        return { success: true, data };
+      } else {
+        // 处理特定错误码
+        switch (data.code) {
+          case 301:
+            this.logger.logCookieIssue('删除失败：Cookie无效或过期', { code: data.code });
+            return { success: false, needRefreshCookie: true };
+          case 404:
+            this.logger.logPlaylistIssue('删除失败：歌单不存在', { playlistId });
+            return { success: false, needRefreshPlaylist: true };
+          case 502:
+            if (retryCount < this.retryCount) {
+              this.logger.warn(`删除失败，${this.retryDelay/1000}秒后重试`, { retryCount });
+              await new Promise(r => setTimeout(r, this.retryDelay));
+              return this.deleteFromPlaylist(songId, playlistId, cookieString, retryCount + 1);
+            }
+            // 降级处理
+            break;
+          default:
+            this.logger.logApiIssue('删除失败：未知错误', { code: data.code, message: data.message });
+        }
+        return { success: false, error: data };
+      }
+
+    } catch (error) {
+      this.logger.logApiIssue('删除歌曲请求失败', error);
+      
+      // 网络错误重试
+      if (retryCount < this.retryCount) {
+        this.logger.warn(`网络错误，${this.retryDelay/1000}秒后重试`, { retryCount });
+        await new Promise(r => setTimeout(r, this.retryDelay));
+        return this.deleteFromPlaylist(songId, playlistId, cookieString, retryCount + 1);
+      }
+      
+      return { success: false, error };
+    }
+  }
+
   async checkSongInPlaylist(songId, playlistId, cookieString) {
     try {
       // 获取歌单详情
@@ -303,76 +375,168 @@ class PlaylistManager {
     }
   }
 
+  /**
+   * 获取指定歌单的所有歌曲 ID（支持分页）- 加密版本
+   */
+  async getPlaylistAllSongIds(playlistId, cookieString, limit = 100, offset = 0, accumulator = []) {
+    try {
+      // 构造请求参数
+      const requestData = {
+        id: playlistId,
+        limit: limit,
+        offset: offset,
+        total: true
+      };
+      
+      // 使用加密函数（需要实现加密，或者使用简化方案）
+      const encrypted = await this.encryptRequest(requestData);
+      
+      const response = await fetch('https://music.163.com/api/playlist/detail', {
+        method: 'POST',
+        headers: { 
+          'Cookie': cookieString,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://music.163.com/',
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          params: encrypted.params,
+          encSecKey: encrypted.encSecKey
+        }),
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+      
+      if (data.code !== 200) {
+        this.logger.error('获取歌单详情失败', { code: data.code, message: data.message });
+        return accumulator;
+      }
+      
+      if (!data.result || !data.result.tracks) {
+        this.logger.warn('歌单无歌曲数据');
+        return accumulator;
+      }
+      
+      const tracks = data.result.tracks || [];
+      const newIds = tracks.map(t => t.id);
+      accumulator.push(...newIds);
+      
+      // 分页处理
+      const total = data.result.trackCount || 0;
+      if (tracks.length === limit && total > offset + limit) {
+        return this.getAllSongsInPlaylist(playlistId, cookieString, limit, offset + limit, accumulator);
+      }
+      
+      return accumulator;
+      
+    } catch (error) {
+      this.logger.error('获取歌单歌曲失败', error);
+      return accumulator;
+    }
+  }
+
+  /**
+   * 简化版加密（使用固定 encSecKey 和简单 params）
+   * 注意：这不是完全符合网易云加密规范，但部分接口可用
+   */
+  async encryptRequest(data) {
+    // 将数据转为 JSON 字符串
+    const jsonStr = JSON.stringify(data);
+    
+    // 简化的加密：base64 编码（实际应使用 AES+RSA）
+    // 这里提供一种可行的简化方案
+    const params = btoa(encodeURIComponent(jsonStr));
+    const encSecKey = '257348aecb5e556c066de214e531aeca04580afb...'; // 固定值
+    
+    return { params, encSecKey };
+  }
+
+  // /**
+  //  * 获取歌单所有歌曲 ID（分页处理）
+  //  * @param {string} playlistId - 歌单 ID
+  //  * @param {string} cookieString - Cookie
+  //  * @returns {Promise<Set<number>>} 歌曲 ID 集合
+  //  */
+  // async getPlaylistAllSongIds(playlistId, cookieString) {
+  //   const limit = 100;
+  //   let offset = 0;
+  //   let allIds = new Set();
+  //   let hasMore = true;
+
+  //   while (hasMore) {
+  //     const response = this.getAllSongsInPlaylist(playlistId, cookieString, limit, offset, accumulator = []);
+
+  //     const data = await response.json();
+  //     if (data.code !== 200 || !data.result || !data.result.tracks) {
+  //       this.logger.error('获取歌单歌曲失败', data);
+  //       break;
+  //     }
+
+  //     const tracks = data.result.tracks;
+  //     tracks.forEach(track => allIds.add(track.id));
+
+  //     // 判断是否还有下一页
+  //     if (tracks.length < limit) {
+  //       hasMore = false;
+  //     } else {
+  //       offset += limit;
+  //     }
+  //   }
+
+  //   this.logger.info(`获取歌单歌曲完成，共 ${allIds.size} 首`);
+  //   return allIds;
+  // }
+
 
   /**
    * 获取“我喜欢的音乐”歌单 ID
    */
-  async getFavoritePlaylistId(cookieString) {
+  async getFavoritePlaylistId(data) {
     try {
-      // 获取用户所有歌单
-      const response = await fetch(
-        `https://music.163.com/api/user/playlist/?limit=100&offset=0`,
-        { headers: { 'Cookie': cookieString } }
+      // const data = await this.getPlayLists(cookieString);
+      this.logger.debug('开始查找喜欢歌单');
+
+      // 检查是否有歌单数据
+      if (!data.playlist || !Array.isArray(data.playlist)) {
+        this.logger.logPlaylistIssue('返回数据中没有歌单列表', data);
+        return null;
+      }
+
+      // 从所有歌单中查找"淡出"歌单
+      const favoritePlaylistId = data.playlist.find(p => 
+        p.name && (
+          p.name.includes('喜欢的音乐') ||       // 关键词匹配
+          p.name.includes('最爱') ||             // 其他常见命名
+          p.name.includes('收藏')
+        )
       );
 
-      const data = await response.json();
-      
-      if (data.code === 200 && data.playlist) {
-        // 查找“我喜欢的音乐”歌单（通常有特殊标记）
-        const favorite = data.playlist.find(p => 
-          p.specialType === 5 ||  // 网易云特殊类型：我喜欢的音乐
-          p.name === '我喜欢的音乐' ||
-          p.name === '我喜欢的音乐' ||
-          p.name.includes('喜欢的音乐')
-        );
+      if (!favoritePlaylistId) {
+        this.logger.logPlaylistIssue('未找到喜欢歌单', {
+          availablePlaylists: data.playlist.slice(0, 5).map(p => p.name)
+        });
         
-        if (favorite) {
-          this.logger.info('找到我喜欢的音乐歌单', { id: favorite.id, name: favorite.name });
-          return favorite.id;
-        }
+        // 可选：返回第一个歌单作为默认
+        // return data.playlist[0] || null;
+        return null;
       }
-      
-      this.logger.warn('未找到我喜欢的音乐歌单');
-      return null;
-    } catch (error) {
-      this.logger.error('获取我喜欢的音乐歌单失败', error);
-      return null;
-    }
-  }
 
-  /**
-   * 从歌单中移除歌曲
-   */
-  async removeFromPlaylist(songId, playlistId, cookieString) {
-    try {
-      this.logger.debug('尝试从歌单移除歌曲', { songId, playlistId });
-
-      const response = await fetch('https://music.163.com/api/playlist/manipulate/tracks', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': cookieString
-        },
-        body: new URLSearchParams({
-          op: 'del',              // del 表示删除
-          pid: playlistId,
-          trackIds: `[${songId}]`
-        })
+      this.logger.debug('找到喜欢歌单', {
+        id: favoritePlaylistId.id,
+        name: favoritePlaylistId.name,
+        trackCount: favoritePlaylistId.trackCount
       });
 
-      const data = await response.json();
-
-      if (data.code === 200) {
-        this.logger.info('歌曲移除成功', { songId, playlistId });
-        return { success: true, data };
-      } else {
-        this.logger.logApiIssue('移除失败', { code: data.code, message: data.message });
-        return { success: false, error: data };
-      }
+      return favoritePlaylistId;
 
     } catch (error) {
-      this.logger.logApiIssue('移除歌曲请求失败', error);
-      return { success: false, error };
+      this.logger.logPlaylistIssue('查找歌单时发生异常', {
+        message: error.message,
+        stack: error.stack
+      });
+      return null;
     }
   }
+
 }

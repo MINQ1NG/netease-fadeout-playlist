@@ -524,10 +524,10 @@ class ContentScript {
           sendResponse({ success: true });
           break;
 
-        case 'ALREADY_ADDED':
-          // 歌曲已在歌单内提示
+        case 'REMOVE':
+          // 歌曲从喜欢列表移除
           if (data && data.songName) {
-            toast.showAlreadyAdded(data.songName, data.songArtists.join('/'));
+            toast.showSongRemove(data.songName, data.artists.join('/'));
           }
           sendResponse({ success: true });
           break;
@@ -535,7 +535,7 @@ class ContentScript {
         case 'SONG_ADDED':
           // 歌曲添加成功提示
           if (data && data.songName) {
-            toast.showSongAdded(data.songName, data.songArtists.join('/'));
+            toast.showSongAdded(data.songName, data.artists.join('/'));
           }
           sendResponse({ success: true });
           break;

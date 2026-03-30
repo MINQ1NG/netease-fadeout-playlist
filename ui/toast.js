@@ -101,8 +101,8 @@ class Toast {
     this.show(`已加入淡出歌单`, 'success', 4000, songName, songArtists);
   }
 
-  showAlreadyAdded(songName, songArtists) {
-    this.show(`已在淡出歌单`, 'success', 4000, songName, songArtists);
+  showSongRemove(songName, songArtists) {
+    this.show(`已从喜欢歌单移除`, 'success', 4000, songName, songArtists);
   }
 
   showCookieIssue() {

@@ -13,6 +13,8 @@ class BackgroundService {
     this.config = {
       fadeOutPlaylistId: null,
       fadeOutPlaylistName: null,
+      favoritePlaylistId: null,
+      favoritePlaylistName: null,
       lastCookieRefresh: null
     };
 
@@ -47,6 +49,8 @@ class BackgroundService {
       chrome.storage.local.get([
         'fadeOutPlaylistId',
         'fadeOutPlaylistName',
+        'favoritePlaylistId',
+        'favoritePlaylistName',
         'lastCookieRefresh'
       ], (result) => {
         this.config = { ...this.config, ...result };
@@ -80,10 +84,12 @@ class BackgroundService {
 
   async initializePlaylist() {
     try {
-      if (this.config.fadeOutPlaylistId) {
+      if (this.config.fadeOutPlaylistId && this.config.favoritePlaylistId) {
         this.logger.info('使用已保存的歌单', {
-          id: this.config.fadeOutPlaylistId,
-          name: this.config.fadeOutPlaylistName
+          fadeoutListId: this.config.fadeOutPlaylistId,
+          fadeoutListName: this.config.fadeOutPlaylistName,
+          favoriteListId: this.config.favoritePlaylistId,
+          favoriteListName: this.config.favoritePlaylistName
         });
         this.playlistManager = new PlaylistManager(this.cookieManager, this.logger);
         return;
@@ -97,16 +103,22 @@ class BackgroundService {
 
       this.playlistManager = new PlaylistManager(this.cookieManager, this.logger);
       
-      const playlist = await this.playlistManager.findFadeOutPlaylist(cookies.raw);
+      const playlists = await this.playlistManager.getPlayLists(cookies.raw);
       
-      if (playlist) {
-        this.config.fadeOutPlaylistId = playlist.id;
-        this.config.fadeOutPlaylistName = playlist.name;
+      if (playlists) {
+        const fadeout = await this.playlistManager.findFadeOutPlaylist(playlists);
+        this.config.fadeOutPlaylistId = fadeout.id;
+        this.config.fadeOutPlaylistName = fadeout.name;
+        const favorite = await this.playlistManager.getFavoritePlaylistId(playlists);
+        this.config.favoritePlaylistId = favorite.id;
+        this.config.favoritePlaylistName = favorite.name;
         await this.saveConfig();
         
         this.logger.info('歌单初始化成功', {
-          id: playlist.id,
-          name: playlist.name
+          fadeoutListId: fadeout.id,
+          fadeoutListName: fadeout.name,
+          favoriteListId: favorite.id,
+          favoriteListName: favorite.name
         });
       } else {
         this.logger.logPlaylistIssue('初始化歌单失败：未找到淡出歌单');
@@ -188,18 +200,6 @@ class BackgroundService {
         throw new Error('无法获取Cookie');
       }
 
-      // 检查歌曲是否已在歌单中 存在问题 待修复
-      // const exists = await this.playlistManager.checkSongInPlaylist(
-      //   song.id,
-      //   this.config.fadeOutPlaylistId,
-      //   cookies.raw
-      // );
-
-      // if (exists) {
-      //   this.logger.info('歌曲已在歌单中', { name: song.name, artists: song.artists });
-      //   return;
-      // }
-
       // 添加到歌单
       const result = await this.playlistManager.addToPlaylist(
         song.id,
@@ -211,11 +211,18 @@ class BackgroundService {
         if (result.data.code == 502) {
           this.logger.debug('歌曲已在淡出歌单中', { name: song.name, artists: song.artists, id: song.id });
 
+          // 取消喜欢 
+          //TODO: trigger on or off
+          await this.playlistManager.deleteFromPlaylist(
+            song.id,
+            this.config.favoritePlaylistId,
+            cookies.raw
+          );
           // 通知content script显示成功提示
-          this.notifyContentScript('ALREADY_ADDED', {
+          this.notifyContentScript('REMOVE', {
             songName: song.name,
             artists: song.artists,
-            playlistName: this.config.fadeOutPlaylistName
+            playlistName: this.config.favoritePlaylistId
           });
         } else{
           this.logger.debug('歌曲加入歌单成功', { name: song.name, artists: song.artists, id: song.id });
