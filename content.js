@@ -19,8 +19,6 @@ class ContentScript {
       fadeOutPlaylistName: null
     };
 
-    // this.BlackArtists = ['SoKo','华晨宇','林忆莲','lis'];
-
     this.init();
   }
 
@@ -393,7 +391,7 @@ class ContentScript {
   /**
    * 处理歌曲切换
    */
-  handleSongChange() {
+  async handleSongChange() {
     this.logger.debug('检测到歌曲切换');
     
     // 保存当前歌曲信息
@@ -401,22 +399,23 @@ class ContentScript {
     this.updatePlayProgress();
 
     //TODO: 跳过拉黑的歌手
-    // const maxSkips = 10;  // 最大跳过次数
-    // let skipCount = 0;
-    // // 只要当前歌曲作者在黑名单中，就继续跳过
-    // while (skipCount < maxSkips && await this.isArtistBlacklisted()) {
-    //   this.logger.info(`跳过黑名单作者: ${this.currentSong.artists}`);
-    //   await this.nextSongRequest();       // 模拟点击下一曲
-    //   await this.delay(500);              // 等待页面更新
-    //   // 更新为新歌曲信息
-    //   this.updateSongInfo();    
-    //   this.updatePlayProgress();
-    //   skipCount++;
-    // }
+    const maxSkips = 10;  // 最大跳过次数
+    let skipCount = 0;
+    // 只要当前歌曲作者在黑名单中，就继续跳过
+    //let check = await this.isArtistBlacklisted();
+    while (skipCount < maxSkips && await this.isArtistBlacklisted()) {
+      this.logger.info(`跳过黑名单作者: ${this.currentSong.artists}`);
+      await this.nextSongRequest();       // 模拟点击下一曲
+      await this.delay(5000);              // 等待页面更新
+      // 更新为新歌曲信息
+      this.updateSongInfo();    
+      this.updatePlayProgress();
+      skipCount++;
+    }
 
-    // if (skipCount >= maxSkips) {
-    //   this.logger.warn('跳过次数过多，可能全是黑名单作者');
-    // }
+    if (skipCount >= maxSkips) {
+      this.logger.warn('跳过次数过多，可能全是黑名单作者');
+    }
     
     // 重置手动跳过标记（新歌）
     this.currentSong.isManualSkip = false;
@@ -425,36 +424,45 @@ class ContentScript {
     this.syncSongState();
   }
 
-  // async isArtistBlacklisted(){
-  //   const artists = this.currentSong.artists || [];
-  //   // 只要任意一个作者在黑名单中，就跳过
-  //   return artists.some(artist => this.BlackArtists.includes(artist));
-  // }
+  async isArtistBlacklisted() {
+    const result = await new Promise((resolve) => {
+      chrome.storage.local.get(['blackArtists'], resolve);
+    });
+    const blacklist = result.blackArtists || [];
+    const artists = this.currentSong.artists || [];
+    
+    // 检查是否匹配
+    return artists.some(artist => 
+      blacklist.some(blocked => 
+        artist.includes(blocked) || blocked.includes(artist)
+      )
+    );
+  }
 
-  // /**
-  //  * 模拟点击下一曲按钮，并等待切换完成
-  //  */
-  // async nextSongRequest() {
-  //   return new Promise((resolve) => {
-  //     const nextButton = document.querySelector('.nxt, .next-btn, [data-action="next"]');
-  //     if (nextButton) {
-  //       nextButton.click();
-  //       this.logger.debug('已模拟点击下一曲按钮');
-  //       // 等待下一曲生效（足够 DOM 更新）
-  //       setTimeout(resolve, 300);
-  //     } else {
-  //       this.logger.warn('未找到下一曲按钮');
-  //       resolve();
-  //     }
-  //   });
-  // }
+  /**
+   * 模拟点击下一曲按钮，并等待切换完成
+   */
+  async nextSongRequest() {
+    return new Promise((resolve) => {
+      const nextButton = document.querySelector('.nxt, .next-btn, [data-action="next"]');
+      if (nextButton) {
+        nextButton.click();
+        this.logger.debug('已模拟点击下一曲按钮');
+        // 等待下一曲生效（足够 DOM 更新）
+        setTimeout(resolve, 300);
+      } else {
+        this.logger.warn('未找到下一曲按钮');
+        resolve();
+      }
+    });
+  }
 
-  // /**
-  //  * 延迟辅助函数
-  //  */
-  // async delay(ms) {
-  //   return new Promise(resolve => setTimeout(resolve, ms));
-  // }
+  /**
+   * 延迟辅助函数
+   */
+  async delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
 
   /**
    * 更新歌曲信息

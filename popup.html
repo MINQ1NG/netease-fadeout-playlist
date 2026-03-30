@@ -3,183 +3,348 @@
 <head>
   <meta charset="UTF-8">
   <style>
+    * {
+      box-sizing: border-box;
+    }
+    
     body {
-      width: 300px;
-      padding: 16px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      width: 360px;
+      padding: 0;
       margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #f5f5f5;
     }
+    
     .container {
       background: white;
-      border-radius: 8px;
-      padding: 16px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      border-radius: 12px;
+      margin: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
-    h3 {
-      margin: 0 0 16px 0;
-      color: #d43c33;
+    
+    /* 头部 */
+    .header {
+      background: linear-gradient(135deg, #f8f7f7 0%, #e4dfdf 100%);
+      color: rgb(94, 15, 15);
+      padding: 16px 20px;
+    }
+    
+    .header h3 {
+      margin: 0;
       font-size: 16px;
+      font-weight: 600;
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    .status-item {
-      margin-bottom: 12px;
-      padding: 8px;
+    
+    .header p {
+      margin: 8px 0 0 0;
+      font-size: 12px;
+      opacity: 0.9;
+    }
+    
+    /* 标签页导航 */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #eee;
+      background: white;
+    }
+    
+    .tab {
+      flex: 1;
+      text-align: center;
+      padding: 12px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #666;
+      transition: all 0.2s;
+      border-bottom: 2px solid transparent;
+    }
+    
+    .tab.active {
+      color: #d43c33;
+      border-bottom-color: #d43c33;
+    }
+    
+    .tab:hover {
+      background: #f9f9f9;
+    }
+    
+    /* 内容区域 */
+    .content {
+      padding: 16px 20px;
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
+    /* 状态卡片 */
+    .status-card {
       background: #f8f8f8;
-      border-radius: 4px;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+    
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
       font-size: 13px;
     }
+    
+    .status-item:last-child {
+      margin-bottom: 0;
+    }
+    
     .status-label {
       color: #666;
-      margin-bottom: 4px;
-      font-size: 12px;
     }
+    
     .status-value {
-      color: #333;
       font-weight: 500;
-      word-break: break-all;
+      color: #333;
     }
-    .status-value.error {
-      color: #f5222d;
-    }
+    
     .status-value.success {
       color: #52c41a;
     }
+    
+    .status-value.error {
+      color: #f5222d;
+    }
+    
     .status-value.warning {
       color: #faad14;
     }
-    button {
-      width: 100%;
-      padding: 10px;
-      background: #f0f0f0;
-      color: #333;
-      border: none;
-      border-radius: 4px;
-      font-size: 14px;
-      cursor: pointer;
-      transition: background 0.3s;
-      margin-top: 8px;
+    
+    /* 黑名单管理 */
+    .add-section {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
     }
-    button:hover {
-      background: #e0e0e0;
+    
+    .add-section input {
+      flex: 1;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
     }
-    button.secondary {
+    
+    .add-section input:focus {
+      border-color: #d43c33;
+    }
+    
+    .add-section button {
+      padding: 10px 16px;
       background: #d43c33;
       color: white;
-      margin-top: 8px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s;
     }
-    button.secondary:hover {
+    
+    .add-section button:hover {
       background: #b03028;
     }
-    /* .stats {
+    
+    /* 黑名单列表 */
+    .blacklist-list {
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    
+    .blacklist-item {
       display: flex;
       justify-content: space-between;
-      margin: 16px 0;
-      padding: 12px 0;
-      border-top: 1px solid #eee;
-      border-bottom: 1px solid #eee;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
     }
-    .stat-item {
-      text-align: center;
-      flex: 1;
+    
+    .blacklist-item:last-child {
+      border-bottom: none;
     }
-    .stat-number {
-      font-size: 20px;
-      font-weight: bold;
-      color: #d43c33;
+    
+    .artist-name {
+      font-size: 13px;
+      color: #333;
     }
-    .stat-label {
-      font-size: 11px;
+    
+    .delete-btn {
+      background: none;
+      border: none;
       color: #999;
-      margin-top: 4px;
-    } */
+      cursor: pointer;
+      font-size: 16px;
+      padding: 4px 8px;
+      transition: color 0.2s;
+    }
+    
+    .delete-btn:hover {
+      color: #f5222d;
+    }
+    
+    .empty-tip {
+      text-align: center;
+      padding: 32px 0;
+      color: #999;
+      font-size: 13px;
+    }
+    
+    /* 按钮 */
+    .action-btn {
+      width: 100%;
+      padding: 10px;
+      background: #eb665f;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 12px;
+    }
+    
+    .action-btn:hover {
+      background: #d14c4c;
+    }
+    
+    .action-btn.primary {
+      background: #f0f0f0;
+      color: #333;
+    }
+    
+    .action-btn.primary:hover {
+      background: #e0e0e0;
+    }
+    
+    /* 日志区域 */
     .log-list {
       max-height: 200px;
       overflow-y: auto;
       font-size: 11px;
       background: #f8f8f8;
       padding: 8px;
-      border-radius: 4px;
+      border-radius: 6px;
       margin-top: 12px;
     }
+    
     .log-item {
-      padding: 4px 0;
+      padding: 6px 0;
       border-bottom: 1px solid #eee;
       color: #666;
+      font-size: 11px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    
     .log-item.error {
       color: #f5222d;
     }
+    
     .log-item.warning {
       color: #faad14;
     }
+    
     .log-item.success {
       color: #52c41a;
     }
+    
     .timestamp {
       color: #999;
-      margin-right: 4px;
+      margin-right: 6px;
     }
+    
+    /* 底部 */
     .footer {
-      margin-top: 16px;
+      padding: 12px 20px;
       text-align: center;
       font-size: 11px;
       color: #999;
+      border-top: 1px solid #eee;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h3>
-      <span>🎵 淡出歌单</span>
-      <span style="font-size: 11px; color: #999; margin-left: auto;" id="version">v1.0.0</span>
-    </h3>
-    
-    <div class="status-item">
-      <div class="status-label">🍪 Cookie状态</div>
-      <div class="status-value" id="cookieStatus">检查中...</div>
+    <div class="header">
+      <h3>
+        <span>🎵 淡出歌单</span>
+      </h3>
+      <p>自动将跳过的歌曲加入淡出歌单</p>
     </div>
     
-    <div class="status-item">
-      <div class="status-label">📋 淡出歌单</div>
-      <div class="status-value" id="playlistStatus">检查中...</div>
+    <div class="tabs">
+      <div class="tab active" data-tab="status">📊 状态</div>
+      <div class="tab" data-tab="blacklist">🚫 黑名单</div>
+      <div class="tab" data-tab="logs">📝 日志</div>
+    </div>
+
+    
+    <!-- 状态页 -->
+    <div class="content tab-content active" id="tab-status">
+      <div class="status-card">
+        <div class="status-item">
+          <span class="status-label">🍪 Cookie状态</span>
+          <span class="status-value" id="cookieStatus">检查中...</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">📋 淡出歌单</span>
+          <span class="status-value" id="playlistStatus">检查中...</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">❤️ 喜欢列表缓存</span>
+          <span class="status-value" id="favoriteStatus">检查中...</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">🚫 黑名单数量</span>
+          <span class="status-value" id="blacklistCount">0</span>
+        </div>
+      </div>
+            
+      <button class="action-btn primary" id="refreshStatusBtn">🔄 刷新状态</button>
+      <button class="action-btn" id="openNeteaseBtn">🌐 打开网易云音乐</button>
     </div>
     
-    <!-- <div class="stats">
-      <div class="stat-item">
-        <div class="stat-number" id="todayCount">0</div>
-        <div class="stat-label">今日添加</div>
+    <!-- 黑名单页 -->
+    <div class="content tab-content" id="tab-blacklist">
+      <div class="add-section">
+        <input type="text" id="artistInput" placeholder="输入歌手名称，如：周杰伦" maxlength="50">
+        <button id="addArtistBtn">添加</button>
       </div>
-      <div class="stat-item">
-        <div class="stat-number" id="totalCount">0</div>
-        <div class="stat-label">累计</div>
+      
+      <div class="blacklist-list" id="blacklistContainer">
+        <div class="empty-tip">暂无黑名单歌手</div>
       </div>
-      <div class="stat-item">
-        <div class="stat-number" id="skipRate">0%</div>
-        <div class="stat-label">跳过率</div>
-      </div>
-    </div> -->
+      
+      <button class="action-btn" id="clearBlacklistBtn">清空所有黑名单</button>
+    </div>
     
-    <button id="refreshBtn">🔄 刷新状态</button>
-    <button class="secondary" id="openNeteaseBtn">🌐 打开网易云音乐</button>
-    
-    <div style="margin-top: 16px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <span style="font-size: 12px; color: #666;">📊 最近日志</span>
-        <span style="font-size: 10px; color: #999; cursor: pointer;" id="clearLogs">清除</span>
-      </div>
+    <!-- 日志页 -->
+    <div class="content tab-content" id="tab-logs">
       <div class="log-list" id="logList">
-        <div class="log-item">等待日志...</div>
+        <div class="log-item">暂无日志</div>
       </div>
+      <button class="action-btn" id="clearLogsBtn">清除日志</button>
     </div>
     
     <div class="footer">
-      自动将跳过的歌曲加入淡出歌单
+      跳过进度 < 50% 的歌曲自动加入淡出歌单
     </div>
   </div>
   

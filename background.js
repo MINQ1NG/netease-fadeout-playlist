@@ -36,7 +36,7 @@ class BackgroundService {
     
     // 设置监听器
     this.setupListeners();
-    this.logger.info();('监听中...');
+    this.logger.info('监听中...');
     
     // 定时任务
     this.setupScheduledTasks();
@@ -209,8 +209,6 @@ class BackgroundService {
 
       if (result.success) {
         if (result.data.code == 502) {
-          this.logger.debug('歌曲已在淡出歌单中', { name: song.name, artists: song.artists, id: song.id });
-
           // 取消喜欢 
           //TODO: trigger on or off
           await this.playlistManager.deleteFromPlaylist(
@@ -224,8 +222,9 @@ class BackgroundService {
             artists: song.artists,
             playlistName: this.config.favoritePlaylistId
           });
+          this.logger.info('从喜欢的音乐移除', { name: song.name, artists: song.artists});
         } else{
-          this.logger.debug('歌曲加入歌单成功', { name: song.name, artists: song.artists, id: song.id });
+          this.logger.info('加入淡出歌单成功', { name: song.name, artists: song.artists});
 
           // 通知content script显示成功提示
           this.notifyContentScript('SONG_ADDED', {
@@ -371,6 +370,17 @@ class BackgroundService {
         // 保存当前歌曲状态
         this.currentSong = data;
         sendResponse({ status: 'ok' });
+        break;
+      case 'UPDATE_BLACKLIST':
+        // 更新黑名单
+        this.blacklist = data.blacklist || [];
+        // 保存到 storage（已在 popup 中保存，这里只记录）
+        this.logger.info('黑名单已更新', { count: this.blacklist.length });
+        sendResponse({ success: true });
+        break;
+
+      case 'GET_BLACKLIST':
+        sendResponse({ blacklist: this.blacklist });
         break;
 
       case 'REFRESH_COOKIES':
