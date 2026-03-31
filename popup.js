@@ -2,6 +2,9 @@ class PopupManager {
   constructor() {
     this.logs = [];
     this.blacklist = [];
+    this.config = {
+      triggerSecondSkip: null
+    };
     this.init();
   }
 
@@ -143,13 +146,14 @@ class PopupManager {
 
   async loadFavoriteStatus() {
     return new Promise((resolve) => {
-      chrome.storage.local.get(['favoriteSongsCache'], (result) => {
-        const cache = result.favoriteSongsCache;
+      chrome.storage.local.get(['favoriteSongIds','favoriteSongIdsUpdateTime'], (result) => {
+        const cache = result.favoriteSongIds;
+        const UpdateTime = result.favoriteSongIdsUpdateTime;
         const favEl = document.getElementById('favoriteStatus');
         
-        if (cache && cache.lastUpdated) {
-          const hoursAgo = Math.floor((Date.now() - cache.lastUpdated) / (60*60*1000));
-          favEl.textContent = `✅ ${cache.ids?.length || 0} 首 (${hoursAgo}小时前)`;
+        if (cache && UpdateTime) {
+          const hoursAgo = Math.floor((Date.now() - UpdateTime) / (60*60*1000));
+          favEl.textContent = `✅ ${cache?.length || 0} 首 (${hoursAgo}小时前)`;
           favEl.className = 'status-value success';
         } else {
           favEl.textContent = '⚠️ 未缓存';
@@ -168,6 +172,27 @@ class PopupManager {
         this.switchTab(tabId);
       });
     });
+
+    // 开关变化监听
+    const toggle = document.getElementById('triggerSecondSkip');
+    if (toggle) {
+      toggle.addEventListener('change', async (e) => {
+        const newValue = e.target.checked;
+        const result = await this.sendMessage('UPDATE_CONFIG', {
+          key: 'triggerSecondSkip',
+          value: newValue
+        });
+        
+        if (result && result.success) {
+          console.log('开关状态已更新:', newValue);
+          this.config.triggerSecondSkip = newValue;
+        } else {
+          // 更新失败，恢复开关状态
+          e.target.checked = !newValue;
+          console.error('更新开关状态失败');
+        }
+      });
+    }
 
     // 添加黑名单
     document.getElementById('addArtistBtn').addEventListener('click', () => {
@@ -192,6 +217,7 @@ class PopupManager {
     document.getElementById('refreshStatusBtn').addEventListener('click', () => {
       this.sendMessage('REFRESH_COOKIES');
       this.sendMessage('REFRESH_PLAYLIST');
+      this.sendMessage('REFRESH_FAVORITESONGS');
       this.addLog('已发送刷新请求', 'info');
       setTimeout(() => this.loadConfig(), 1000);
     });
@@ -291,8 +317,7 @@ class PopupManager {
 
   startAutoRefresh() {
     setInterval(() => {
-      this.loadConfig();
-      this.loadFavoriteStatus();
+      this.updateStatusUI();
     }, 30000);
   }
 }

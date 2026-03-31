@@ -15,6 +15,7 @@ class BackgroundService {
       fadeOutPlaylistName: null,
       favoritePlaylistId: null,
       favoritePlaylistName: null,
+      triggleSecondSkip: null,
       lastCookieRefresh: null
     };
 
@@ -33,6 +34,8 @@ class BackgroundService {
     
     // 初始化歌单
     await this.initializePlaylist();
+  
+    this.startFavoriteSync();
     
     // 设置监听器
     this.setupListeners();
@@ -51,6 +54,7 @@ class BackgroundService {
         'fadeOutPlaylistName',
         'favoritePlaylistId',
         'favoritePlaylistName',
+        'triggerSecondSkip',
         'lastCookieRefresh'
       ], (result) => {
         this.config = { ...this.config, ...result };
@@ -85,7 +89,7 @@ class BackgroundService {
   async initializePlaylist() {
     try {
       if (this.config.fadeOutPlaylistId && this.config.favoritePlaylistId) {
-        this.logger.info('使用已保存的歌单', {
+        this.logger.debug('使用已保存的歌单', {
           fadeoutListId: this.config.fadeOutPlaylistId,
           fadeoutListName: this.config.fadeOutPlaylistName,
           favoriteListId: this.config.favoritePlaylistId,
@@ -130,6 +134,51 @@ class BackgroundService {
     }
   }
 
+  /**
+   * 检查歌曲是否在喜欢的音乐中（从缓存查询）
+   */
+  isSongInFavorite(songId) {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['favoriteSongIds'], (result) => {
+        const cache = result.favoriteSongIds;
+        if (cache && cache.songIds) {
+          resolve(cache.songIds.includes(parseInt(songId)));
+        } else {
+          resolve(false);
+        }
+      });
+    });
+  }
+
+  async getFavoriteSongsFromPage() {
+    return new Promise((resolve, reject) => {
+      chrome.tabs.query({ url: ["*://music.163.com/*"] }, (tabs) => {
+        if (tabs.length === 0) {
+          reject(new Error('未找到网易云音乐页面'));
+          return;
+        }
+        const id = this.config.favoritePlaylistId;
+        chrome.tabs.sendMessage(tabs[0].id, {
+          type: 'FETCH_FAVORITE_SONGS',
+          data: {playlistId: id}
+        }, (response) => {
+          if (response && response.success) {
+            resolve();
+          } else {
+            reject(new Error('获取失败'));
+          }
+        });
+      });
+    });
+  }
+
+  startFavoriteSync() {
+    // 首次立即同步
+    this.getFavoriteSongsFromPage();
+    // 每小时同步一次
+    setInterval(() => this.getFavoriteSongsFromPage(), 60 * 60 * 1000);
+  }
+
   setupListeners() {
     // 监听来自content script的消息
     chrome.runtime.onMessage.addListener(this.handleMessage.bind(this));
@@ -141,6 +190,14 @@ class BackgroundService {
   async shouldAddToPlaylist(song) {
     // 基本条件检查
     if (!song || !song.id) {
+      return false;
+    }
+
+    if (!this.isSongInFavorite(song.id)){
+      this.logger.info('歌曲不在喜欢列表', {
+        name: song.name,
+        artists: song.artists
+      });
       return false;
     }
 
@@ -209,28 +266,35 @@ class BackgroundService {
 
       if (result.success) {
         if (result.data.code == 502) {
-          // 取消喜欢 
-          //TODO: trigger on or off
-          await this.playlistManager.deleteFromPlaylist(
-            song.id,
-            this.config.favoritePlaylistId,
-            cookies.raw
-          );
-          // 通知content script显示成功提示
-          this.notifyContentScript('REMOVE', {
-            songName: song.name,
-            artists: song.artists,
-            playlistName: this.config.favoritePlaylistId
-          });
-          this.logger.info('从喜欢的音乐移除', { name: song.name, artists: song.artists});
+          // triggleSecondSkip on =>第二次跳过后，移除喜欢 
+          if (this.config.triggleSecondSkip){
+            
+            await this.playlistManager.deleteFromPlaylist(
+              song.id,
+              this.config.favoritePlaylistId,
+              cookies.raw
+            );
+            // 通知content script显示成功提示
+            this.notifyContentScript('REMOVE', {
+              songName: song.name,
+              artists: song.artists
+            });
+            this.logger.info('从喜欢的音乐移除', { name: song.name, artists: song.artists});
+          } else {
+            this.notifyContentScript('SECOND_SKIP_DISABLED', {
+              songName: song.name,
+              artists: song.artists
+            });
+            this.logger.info('歌曲已在淡出歌单', { name: song.name, artists: song.artists});
+          }
+      
         } else{
           this.logger.info('加入淡出歌单成功', { name: song.name, artists: song.artists});
 
           // 通知content script显示成功提示
           this.notifyContentScript('SONG_ADDED', {
             songName: song.name,
-            songArtists: song.artists,
-            playlistName: this.config.fadeOutPlaylistName
+            artists: song.artists
           });
         }
         
@@ -249,7 +313,7 @@ class BackgroundService {
           this.logger.logApiIssue('添加失败', result.error);
           this.notifyContentScript('ADD_FAILED', {
             songName: song.name,
-            songArtists: song.artists,
+            artists: song.artists,
           });
         }
       }
@@ -382,14 +446,30 @@ class BackgroundService {
       case 'GET_BLACKLIST':
         sendResponse({ blacklist: this.blacklist });
         break;
+      // 新增消息处理：更新配置
+      case 'UPDATE_CONFIG':
+        const { key, value } = data;
+        if (this.config.hasOwnProperty(key)) {
+          this.config[key] = value;
+          await this.saveConfig();
+          this.logger.info(`配置已更新: ${key} = ${value}`);
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: '配置项不存在' });
+        }
+        break;
 
       case 'REFRESH_COOKIES':
         this.initializeCookies().then(() => sendResponse({ success: true }));
-        return true;
+        break;
 
       case 'REFRESH_PLAYLIST':
         this.initializePlaylist().then(() => sendResponse({ success: true }));
-        return true;
+        break;
+      
+      case 'REFRESH_FAVORITESONGS':
+        this.getFavoriteSongsFromPage().then(() => sendResponse({ success: true }));
+        break;
     }
     return true;
   }

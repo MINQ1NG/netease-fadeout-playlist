@@ -322,6 +322,133 @@ class ContentScript {
   }
 
   /**
+   * 通过静态页面获取歌单所有歌曲 ID（滚动加载方式）
+   * @param {string} playlistId - 歌单 ID
+   * @param {number} maxScrollAttempts - 最大滚动次数（防止死循环）
+   * @returns {Promise<Array>} 歌曲 ID 数组
+   */
+  async getAllSongsFromStaticPage(playlistId, maxScrollAttempts = 50) {
+    return new Promise((resolve, reject) => {
+      // 创建隐藏的 iframe 加载歌单页面
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = `https://music.163.com/playlist?id=${playlistId}`;
+      document.body.appendChild(iframe);
+
+      let songIds = new Set();      // 使用 Set 自动去重
+      let lastSongCount = 0;
+      let scrollAttempts = 0;
+      let noNewSongsCount = 0;
+      let checkInterval = null;
+
+      iframe.onload = () => {
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        this.logger.debug(`iframe 加载完成，开始解析歌曲`);
+        //this.logger.info(`获取到 ${songIds.length} 首喜欢的歌曲`);
+
+        // 模拟滚动到底部，触发加载更多
+        const scrollToBottom = () => {
+          const win = iframe.contentWindow;
+          const scrollHeight = doc.documentElement.scrollHeight;
+          const clientHeight = doc.documentElement.clientHeight;
+          win.scrollTo(0, scrollHeight);
+        };
+
+        // 获取当前页面的歌曲 ID
+        const extractSongIds = () => {
+          const doc = iframe.contentDocument || iframe.contentWindow.document;
+          // 网易云歌单页面的歌曲项选择器（可能需要根据实际页面调整）
+          const songItems = doc.querySelectorAll('.song-item, .j-flag, .f-cb, [data-id]');
+          
+          const newIds = [];
+          songItems.forEach(item => {
+            // 尝试多种方式获取歌曲 ID
+            let id = item.getAttribute('data-id');
+            if (!id) {
+              const href = item.querySelector('a')?.getAttribute('href');
+              if (href) {
+                const match = href.match(/song\?id=(\d+)/);
+                if (match) id = match[1];
+              }
+            }
+            if (id && !songIds.has(id)) {
+              songIds.add(id);
+              newIds.push(id);
+            }
+          });
+          
+          return newIds;
+        };
+
+        // 检查是否还有新歌曲加载
+        const checkNewSongs = () => {
+          const beforeCount = songIds.size;
+          const newIds = extractSongIds();
+          const afterCount = songIds.size;
+          
+          this.logger.debug(`滚动 ${scrollAttempts + 1}: 已有 ${afterCount} 首歌曲，新增 ${afterCount - beforeCount} 首`);
+          
+          // 如果没有新歌曲，计数增加
+          if (afterCount === beforeCount) {
+            noNewSongsCount++;
+          } else {
+            noNewSongsCount = 0;
+          }
+          
+          // 如果连续 3 次没有新歌曲，或者达到最大滚动次数，结束
+          if (noNewSongsCount >= 3 || scrollAttempts >= maxScrollAttempts) {
+            clearInterval(checkInterval);
+            this.logger.debug(`歌曲提取完成，共 ${songIds.size} 首歌曲`);
+            
+            // 清理 iframe
+            setTimeout(() => {
+              iframe.remove();
+            }, 1000);
+            
+            resolve(Array.from(songIds));
+            return;
+          }
+          
+          // 滚动到底部，加载更多
+          scrollToBottom();
+          scrollAttempts++;
+        };
+
+        // 等待页面初始加载后开始提取
+        setTimeout(() => {
+          // 先提取当前可见的歌曲
+          extractSongIds();
+          
+          // 开始滚动检测（每 2 秒检查一次）
+          checkInterval = setInterval(checkNewSongs, 2000);
+          
+          // 手动触发第一次滚动
+          scrollToBottom();
+        }, 3000);
+      };
+
+      iframe.onerror = () => {
+        this.logger.error('iframe 加载失败');
+        iframe.remove();
+        reject(new Error('无法加载歌单页面'));
+      };
+    });
+  }
+
+  async syncFavoritePlaylist(favoriteId) {
+    // 调用静态页面解析方法
+    const songIds = await this.getAllSongsFromStaticPage(favoriteId);
+    
+    this.logger.info(`获取到 ${songIds.length} 首喜欢的歌曲`);
+    
+    // 保存到 storage 或缓存
+    chrome.storage.local.set({
+      favoriteSongIds: songIds,
+      favoriteSongIdsUpdateTime: Date.now()
+    });
+  }
+
+  /**
    * 获取当前歌曲名称
    * @returns {string|null} 歌曲名称
    */
@@ -402,7 +529,6 @@ class ContentScript {
     const maxSkips = 10;  // 最大跳过次数
     let skipCount = 0;
     // 只要当前歌曲作者在黑名单中，就继续跳过
-    //let check = await this.isArtistBlacklisted();
     while (skipCount < maxSkips && await this.isArtistBlacklisted()) {
       this.logger.info(`跳过黑名单作者: ${this.currentSong.artists}`);
       await this.nextSongRequest();       // 模拟点击下一曲
@@ -540,6 +666,13 @@ class ContentScript {
           sendResponse({ success: true });
           break;
 
+        case 'SECOND_SKIP_DISABLED':
+          if (data && data.songName) {
+            toast.showSongAlreadyAdded(data.songName, data.artists.join('/'));
+          }
+          sendResponse({ success: true });
+          break;
+
         case 'SONG_ADDED':
           // 歌曲添加成功提示
           if (data && data.songName) {
@@ -562,7 +695,7 @@ class ContentScript {
 
         case 'ADD_FAILED':
           if (data && data.songName) {
-            toast.showAddFailed(data.songName, data.songArtists.join('/'));
+            toast.showAddFailed(data.songName, data.artists.join('/'));
           }
           sendResponse({ success: true });
           break;
@@ -572,6 +705,12 @@ class ContentScript {
           sendResponse({ cookies: document.cookie });
           break;
 
+        case 'FETCH_FAVORITE_SONGS':
+          let playlistId = data.playlistId;
+          this.syncFavoritePlaylist(playlistId);
+          sendResponse({ success: true});
+          break;
+
         default:
           this.logger.debug('未知消息类型', { type, data });
           sendResponse({ error: 'unknown_type' });
@@ -579,6 +718,29 @@ class ContentScript {
 
       return true; // 保持消息通道开放
     });
+  }
+
+  initFavoriteListener() {
+    // 监听 storage 变化，实时更新缓存
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'local' && changes.favoriteSongIds) {
+        const newIds = changes.favoriteSongIds.newValue || [];
+        this.favoriteSongIds = new Set(newIds);
+        this.logger.debug('收藏歌曲列表已更新', { count: this.favoriteSongIds.size });
+      }
+    });
+
+    // 主动获取一次现有数据
+    chrome.storage.local.get(['favoriteSongIds'], (result) => {
+      const ids = result.favoriteSongIds || [];
+      this.favoriteSongIds = new Set(ids);
+      this.logger.debug(`初始化收藏歌曲列表，共 ${this.favoriteSongIds.size} 首`);
+    });
+  }
+  
+  isCurrentSongFavorite() {
+    if (!this.currentSong.id) return false;
+    return this.favoriteSongIds.has(Number(this.currentSong.id));
   }
 
   /**

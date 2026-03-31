@@ -105,6 +105,10 @@ class Toast {
     this.show(`已从喜欢歌单移除`, 'success', 4000, songName, songArtists);
   }
 
+  showSongAlreadyAdded(songName, songArtists) {
+    this.show(`歌曲无需添加`, 'success', 4000, songName, songArtists);
+  }
+
   showCookieIssue() {
     this.show('Cookie需要更新，请重新登录网易云音乐', 'warning', 5000);
   }
