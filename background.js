@@ -15,7 +15,7 @@ class BackgroundService {
       fadeOutPlaylistName: null,
       favoritePlaylistId: null,
       favoritePlaylistName: null,
-      triggleSecondSkip: null,
+      triggerSecondSkip: true,
       lastCookieRefresh: null
     };
 
@@ -165,7 +165,7 @@ class BackgroundService {
           if (response && response.success) {
             resolve();
           } else {
-            reject(new Error('获取失败'));
+            reject(new Warn('需刷新页面'));
           }
         });
       });
@@ -267,8 +267,7 @@ class BackgroundService {
       if (result.success) {
         if (result.data.code == 502) {
           // triggleSecondSkip on =>第二次跳过后，移除喜欢 
-          if (this.config.triggleSecondSkip){
-            
+          if (this.config.triggerSecondSkip){
             await this.playlistManager.deleteFromPlaylist(
               song.id,
               this.config.favoritePlaylistId,
@@ -327,20 +326,20 @@ class BackgroundService {
     }
   }
 
-  async getCurrentSongFromTab(tabId) {
-    return new Promise((resolve) => {
-      chrome.tabs.sendMessage(tabId, {
-        type: 'GET_CURRENT_SONG'
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          this.logger.debug('获取歌曲信息失败', chrome.runtime.lastError);
-          resolve(null);
-        } else {
-          resolve(response);
-        }
-      });
-    });
-  }
+  // async getCurrentSongFromTab(tabId) {
+  //   return new Promise((resolve) => {
+  //     chrome.tabs.sendMessage(tabId, {
+  //       type: 'GET_CURRENT_SONG'
+  //     }, (response) => {
+  //       if (chrome.runtime.lastError) {
+  //         this.logger.debug('获取歌曲信息失败', chrome.runtime.lastError);
+  //         resolve(null);
+  //       } else {
+  //         resolve(response);
+  //       }
+  //     });
+  //   });
+  // }
 
   startPendingProcessor() {
     this.pendingInterval = setInterval(() => {
@@ -452,7 +451,7 @@ class BackgroundService {
         if (this.config.hasOwnProperty(key)) {
           this.config[key] = value;
           await this.saveConfig();
-          this.logger.info(`配置已更新: ${key} = ${value}`);
+          this.logger.debug(`配置已更新: ${key} = ${value}`);
           sendResponse({ success: true });
         } else {
           sendResponse({ success: false, error: '配置项不存在' });

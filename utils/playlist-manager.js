@@ -6,7 +6,6 @@ class PlaylistManager {
     this.retryDelay = 2000;
   }
 
-  // utils/playlist-manager.js - 修复findFadeOutPlaylist方法
   async getPlayLists(cookieString) {
     // 第一步：先获取当前登录用户的ID
     const userId = await this.getCurrentUserId(cookieString);
@@ -18,7 +17,6 @@ class PlaylistManager {
     this.logger.debug('获取到用户ID', { userId });
 
     // 第二步：使用用户ID获取该用户的歌单
-    // 使用正确的API路径（参考搜索结果中的 /user/playlist [citation:9]）
     const response = await fetch(
       `https://music.163.com/api/user/playlist/?uid=${userId}&limit=100&offset=0`,
       {
@@ -222,6 +220,14 @@ class PlaylistManager {
     }
   }
 
+  /**
+   * 向指定歌单中添加歌曲
+   * @param {string|number} songId - 歌曲ID
+   * @param {string|number} playlistId - 歌单ID
+   * @param {string} cookieString - 登录Cookie
+   * @param {number} retryCount - 当前重试次数（内部使用）
+   * @returns {Promise<{success: boolean, error?: object}>}
+   */
   async addToPlaylist(songId, playlistId, cookieString, retryCount = 0) {
     try {
       this.logger.debug('尝试添加歌曲到歌单', { songId, playlistId });
@@ -350,144 +356,6 @@ class PlaylistManager {
       return { success: false, error };
     }
   }
-
-  async checkSongInPlaylist(songId, playlistId, cookieString) {
-    try {
-      // 获取歌单详情
-      const response = await fetch(
-        `https://music.163.com/api/playlist/detail?id=${playlistId}`,
-        { headers: { 'Cookie': cookieString } }
-      );
-
-      const data = await response.json();
-      
-      if (data.code === 200 && data.result && data.result.trackIds) {
-        const exists = data.result.trackIds.some(t => t.id === parseInt(songId));
-        this.logger.debug('检查歌曲是否已在歌单', { songId, exists });
-        return exists;
-      }
-
-      return false;
-
-    } catch (error) {
-      this.logger.logApiIssue('检查歌曲是否在歌单时失败', error);
-      return false;
-    }
-  }
-
-  /**
-   * 获取指定歌单的所有歌曲 ID（支持分页）- 加密版本
-   */
-  async getPlaylistAllSongIds(playlistId, cookieString, limit = 100, offset = 0, accumulator = []) {
-    try {
-      // 构造请求参数
-      const requestData = {
-        id: playlistId,
-        limit: limit,
-        offset: offset,
-        total: true
-      };
-      
-      // 使用加密函数（需要实现加密，或者使用简化方案）
-      const encrypted = await this.encryptRequest(requestData);
-      
-      const response = await fetch('https://music.163.com/api/playlist/detail', {
-        method: 'POST',
-        headers: { 
-          'Cookie': cookieString,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Referer': 'https://music.163.com/',
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: new URLSearchParams({
-          params: encrypted.params,
-          encSecKey: encrypted.encSecKey
-        }),
-        credentials: 'include'
-      });
-
-      const data = await response.json();
-      
-      if (data.code !== 200) {
-        this.logger.error('获取歌单详情失败', { code: data.code, message: data.message });
-        return accumulator;
-      }
-      
-      if (!data.result || !data.result.tracks) {
-        this.logger.warn('歌单无歌曲数据');
-        return accumulator;
-      }
-      
-      const tracks = data.result.tracks || [];
-      const newIds = tracks.map(t => t.id);
-      accumulator.push(...newIds);
-      
-      // 分页处理
-      const total = data.result.trackCount || 0;
-      if (tracks.length === limit && total > offset + limit) {
-        return this.getAllSongsInPlaylist(playlistId, cookieString, limit, offset + limit, accumulator);
-      }
-      
-      return accumulator;
-      
-    } catch (error) {
-      this.logger.error('获取歌单歌曲失败', error);
-      return accumulator;
-    }
-  }
-
-  /**
-   * 简化版加密（使用固定 encSecKey 和简单 params）
-   * 注意：这不是完全符合网易云加密规范，但部分接口可用
-   */
-  async encryptRequest(data) {
-    // 将数据转为 JSON 字符串
-    const jsonStr = JSON.stringify(data);
-    
-    // 简化的加密：base64 编码（实际应使用 AES+RSA）
-    // 这里提供一种可行的简化方案
-    const params = btoa(encodeURIComponent(jsonStr));
-    const encSecKey = '257348aecb5e556c066de214e531aeca04580afb...'; // 固定值
-    
-    return { params, encSecKey };
-  }
-
-  // /**
-  //  * 获取歌单所有歌曲 ID（分页处理）
-  //  * @param {string} playlistId - 歌单 ID
-  //  * @param {string} cookieString - Cookie
-  //  * @returns {Promise<Set<number>>} 歌曲 ID 集合
-  //  */
-  // async getPlaylistAllSongIds(playlistId, cookieString) {
-  //   const limit = 100;
-  //   let offset = 0;
-  //   let allIds = new Set();
-  //   let hasMore = true;
-
-  //   while (hasMore) {
-  //     const response = this.getAllSongsInPlaylist(playlistId, cookieString, limit, offset, accumulator = []);
-
-  //     const data = await response.json();
-  //     if (data.code !== 200 || !data.result || !data.result.tracks) {
-  //       this.logger.error('获取歌单歌曲失败', data);
-  //       break;
-  //     }
-
-  //     const tracks = data.result.tracks;
-  //     tracks.forEach(track => allIds.add(track.id));
-
-  //     // 判断是否还有下一页
-  //     if (tracks.length < limit) {
-  //       hasMore = false;
-  //     } else {
-  //       offset += limit;
-  //     }
-  //   }
-
-  //   this.logger.info(`获取歌单歌曲完成，共 ${allIds.size} 首`);
-  //   return allIds;
-  // }
-
 
   /**
    * 获取“我喜欢的音乐”歌单 ID

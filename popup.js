@@ -2,9 +2,7 @@ class PopupManager {
   constructor() {
     this.logs = [];
     this.blacklist = [];
-    this.config = {
-      triggerSecondSkip: null
-    };
+    this.config = { triggerSecondSkip: true };
     this.init();
   }
 
@@ -22,6 +20,14 @@ class PopupManager {
       const config = await this.sendMessage('GET_CONFIG');
       if (config) {
         this.updateStatusUI(config);
+      }
+      if (config.triggerSecondSkip) {
+        this.config.triggerSecondSkip = config.triggerSecondSkip;
+        // 只在初始化时设置开关状态
+        const toggle = document.getElementById('triggerSecondSkip');
+        if (toggle) {
+          toggle.checked = this.config.triggerSecondSkip === true;
+        }
       }
     } catch (error) {
       console.error('加载配置失败:', error);
@@ -119,7 +125,7 @@ class PopupManager {
     if (config.lastCookieRefresh) {
       const daysAgo = Math.floor((Date.now() - config.lastCookieRefresh) / (24*60*60*1000));
       if (daysAgo < 7) {
-        cookieEl.textContent = `✅ 有效 (${daysAgo}天前)`;
+        cookieEl.textContent = `✅ 有效`;
         cookieEl.className = 'status-value success';
       } else {
         cookieEl.textContent = `⚠️ 即将过期 (${daysAgo}天前)`;
@@ -153,7 +159,7 @@ class PopupManager {
         
         if (cache && UpdateTime) {
           const hoursAgo = Math.floor((Date.now() - UpdateTime) / (60*60*1000));
-          favEl.textContent = `✅ ${cache?.length || 0} 首 (${hoursAgo}小时前)`;
+          favEl.textContent = `✅ ${cache?.length || 0} 首`;
           favEl.className = 'status-value success';
         } else {
           favEl.textContent = '⚠️ 未缓存';
@@ -317,8 +323,9 @@ class PopupManager {
 
   startAutoRefresh() {
     setInterval(() => {
-      this.updateStatusUI();
-    }, 30000);
+      const config = this.sendMessage('GET_CONFIG');
+      this.updateStatusUI(config);
+    }, 5 * 60 * 1000);
   }
 }
 
